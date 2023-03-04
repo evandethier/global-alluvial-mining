@@ -130,7 +130,7 @@ ssc_ma_timeseries <- fread('river_mining_ssc_ma_timeseries.csv')
 # All mining locations
 # All locations
 glasgm_locations_import <- readOGR('ASGM_global_sites_10232022.kml')
-# writeOGR(glasgm_locations_import, dsn = './glasgm_locations_import', layer = 'glasgm_locations_import', driver = 'ESRI Shapefile')
+# writeOGR(glasgm_locations_import, dsn = './mining_data_for_earth_engine/glasgm_locations_import', layer = 'glasgm_locations_import', driver = 'ESRI Shapefile')
 
 global_asgm_datatable_import <- data.table(data.frame(glasgm_locations_import))[
   ,':='(Latitude = coords.x2, Longitude = coords.x1)
@@ -1930,17 +1930,24 @@ for(i in 1:7){
 }
 
 #### KILOMETERS AFFECTED VS. TOTAL KMS IN BASIN, COUNTRY, LAND MASS, REGION (TROPICS) ####
-# TO DO: export total river kms from each major identified basin
 
-river_km_by_mining_country <- fread('river_lengths_by_mining_country_1000km2_60m_wide.csv')[,':='(.geo = NULL)]
-river_km_by_tropics <- rbind(fread('river_lengths_by_country_1000km2_60m_wide.csv')[
+river_km_by_mining_country <- fread(
+  paste0('/river_data_from_earth_engine/', 
+         'river_lengths_by_mining_country_1000km2_60m_wide.csv'))[
+           ,':='(.geo = NULL)]
+river_km_by_tropics <- rbind(fread(
+  paste0('/river_data_from_earth_engine/',
+         'river_lengths_by_country_1000km2_60m_wide.csv'))[
   ,':='(.geo = NULL)][
     country != 'Myanmar'],
   river_km_by_mining_country[country == 'Myanmar'])
+
 total_river_km_tropics <- sum(river_km_by_tropics$river_km)
 print(paste0('total river kilometers in tropics: ', round(total_river_km_tropics)))
 
-mining_rivers_country_basin <- fread('mining_rivers_country_basin.csv')[
+mining_rivers_country_basin <- fread(
+  paste0('/river_data_from_earth_engine/',
+         'mining_rivers_country_basin.csv'))[
   ,':='(.geo = NULL,
         BAS_NAME = NULL,
         COUNTRY = NULL,
@@ -2048,8 +2055,3 @@ ggsave(percent_country_rivers_affected_plot, filename = paste0(wd_figures, 'perc
 ggsave(percent_country_rivers_affected_plot, filename = paste0(wd_figures, 'percent_country_rivers_affected_plot.png'),
        width = 5, height = 10)
 
-
-#### vvvv WORKING BELOW HERE vvvv ####
-# Subplot with selected rivers: cameroon_kadei_river_agm_region, drc_lindi_river_agm_region, drc_mongbwalu_mining_region,
-# 'mongolia_zamaar_goldfield', 'myanmar_chindwin_gold_lower', 'brazil_luar_da_praia_agm_region'
-# 

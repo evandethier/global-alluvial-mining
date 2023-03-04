@@ -1,13 +1,5 @@
 # Import Landsat data (raw output from Google Earth Engine)
 #### LIBRARY IMPORTS ####
-install.packages('rgdal')
-install.packages('sf')
-install.packages('ggpubr')
-install.packages('car')
-install.packages('gstat')
-install.packages('Hmisc')
-install.packages('glmnet')
-# (Do not install from sources)
 library(data.table)
 
 library(ggplot2)
@@ -119,66 +111,42 @@ for(i in 1:length(export_folder_paths)){
 # Set working directory for import and export
 setwd(wd_imports)
 
-#### IMPORT/EXPORT RAW DATA FROM GOOGLE EARTH ####
-
-
-# First Transect Batch
-glasgm_transects_import <- readOGR('asgm-global-transects.kml')
-writeOGR(glasgm_transects_import, dsn = './glasgm_transects_import', layer = 'glasgm_transects_import', driver = 'ESRI Shapefile')
-
-# Second Transect Batch
-glasgm_transects_import <- readOGR('asgm-global-transects-2.kml')
-writeOGR(glasgm_transects_import, dsn = './glasgm_transects_import_2', layer = 'glasgm_transects_import_2', driver = 'ESRI Shapefile')
-# Third Transect Batch
-glasgm_transects_import <- readOGR('agm-global-transects-3.kml')
-writeOGR(glasgm_transects_import, dsn = './glasgm_transects_import_3', layer = 'glasgm_transects_import_3', driver = 'ESRI Shapefile')
-
-# Fourth Transect Batch
-glasgm_transects_import <- readOGR('agm-global-transects-4.kml')
-writeOGR(glasgm_transects_import, dsn = './glasgm_transects_import_4', layer = 'glasgm_transects_import_4', driver = 'ESRI Shapefile')
-
-# Fifth Transect Batch
-glasgm_transects_import <- readOGR('agm-global-transects-5.kml')
-writeOGR(glasgm_transects_import, dsn = './glasgm_transects_import_5', layer = 'glasgm_transects_import_5', driver = 'ESRI Shapefile')
-
-# SIXTH Transect Batch
-glasgm_transects_import <- readOGR('agm-global-transects-6.kml')
-writeOGR(glasgm_transects_import, dsn = './glasgm_transects_import_6', layer = 'glasgm_transects_import_6', driver = 'ESRI Shapefile')
-
-# Seventh Transect Batch
-glasgm_transects_import <- readOGR('agm-global-transects-7.kml')
-writeOGR(glasgm_transects_import, dsn = './glasgm_transects_import_7', layer = 'glasgm_transects_import_7', driver = 'ESRI Shapefile')
-
-# Seventh Transect Batch
-glasgm_transects_import <- readOGR('agm-global-transects-8.kml')
-writeOGR(glasgm_transects_import, dsn = './glasgm_transects_import_8', layer = 'glasgm_transects_import_8', driver = 'ESRI Shapefile')
-
 
 #### IMPORT DATA AND DEFINE COLUMNS ####
+# Data can be downloaded from <10.5281/zenodo.7699122>
+# Once downloaded, the `landsat_data_from_earth_engine` folder 
+# needs to be moved into the global-asgm-imports folder.
+# The following code should then run.
+# Can be done using: https://inbo.github.io/inborutils/reference/download_zenodo.html package
 
-
-# Import Landsat sample transect data for each batch of mining sites
-asgm_river_import_1 <- fread('global_agm_ls57_rawBands_b7lt500.csv')[
+# Import Landsat river profile data for each batch of mining sites
+asgm_river_import_1 <- fread(
+  paste0('landsat_data_from_earth_engine/', 'global_agm_ls57_rawBands_b7lt500.csv'))[
   ,':='(.geo = NULL)
 ]
 
-asgm_river_import_2 <- fread('global_agm_2_ls57_rawBands_b7lt500.csv')[
+asgm_river_import_2 <- fread(
+  paste0('landsat_data_from_earth_engine/', 'global_agm_2_ls57_rawBands_b7lt500.csv'))[
   ,':='(.geo = NULL)
 ]
 
-asgm_river_import_3 <- fread('global_agm_3_ls57_rawBands_b7lt500.csv')[
+asgm_river_import_3 <- fread(
+  paste0('landsat_data_from_earth_engine/', 'global_agm_3_ls57_rawBands_b7lt500.csv'))[
   ,':='(.geo = NULL)
 ]
 
-asgm_river_import_4 <- fread('global_agm_4_ls57_rawBands_b7lt500.csv')[
+asgm_river_import_4 <- fread(
+  paste0('landsat_data_from_earth_engine/', 'global_agm_4_ls57_rawBands_b7lt500.csv'))[
   ,':='(.geo = NULL)
 ]
 
-asgm_river_import_5 <- fread('global_agm_5_ls57_rawBands_b7lt500.csv')[
+asgm_river_import_5 <- fread(
+  paste0('landsat_data_from_earth_engine/', 'global_agm_5_ls57_rawBands_b7lt500.csv'))[
   ,':='(.geo = NULL)
 ]
 
-asgm_river_import_6 <- fread('global_agm_6_ls57_rawBands_b7lt500.csv')[
+asgm_river_import_6 <- fread(
+  paste0('landsat_data_from_earth_engine/', 'global_agm_6_ls57_rawBands_b7lt500.csv'))[
   ,':='(.geo = NULL)
 ]
 
