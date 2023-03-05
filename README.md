@@ -1,3 +1,10 @@
+---
+title: "README"
+author: "Evan Dethier"
+date: '2023-03-05'
+output: html_document
+---
+
 # River mineral mining 
 **Mapping and documenting the effects of mining for gold and precious minerals in streams and rivers across the world**
 
