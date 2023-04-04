@@ -16,7 +16,7 @@ output: html_document
 <br>
 
 ![**Mining in rivers was key to the United States mining rushes of the 19th century. High-powered jets of water were used to rapidly erode river beds and banks, just as they are today in the tropics. This image from California in the 1860s or 1870s shows hydraulic mining underway, with excavation by high-powered jets of water. Image from the US Library of Congress.**](visuals/hydraulic_mining_french_corral_nevada_county_1860_1870_library_of_congress.jpeg)
-**Mining in rivers was key to the United States mining rushes of the 19th century. High-powered jets of water were used to rapidly erode river beds and banks, just as they are today in the tropics. This image from California in the 1860s or 1870s shows hydraulic mining underway, with excavation by high-powered jets of water. Image from the US Library of Congress.**
+**Mining in rivers was key to the United States mining rushes of the 19th century. High-powered jets of water were used to rapidly erode river beds and banks, just as they are today in the tropics. This image from California in the 1860s or 1870s shows hydraulic mining underway, with excavation by high-powered jets of water. Image from the US Library of Congress.[^1]**
 
 * * *
 
@@ -54,7 +54,7 @@ The reach and scale of the ongoing river mining boom is under appreciated. We fi
 
 <br>
 
-We used Landsat satellite imagery to estimate how **suspended sediment concentration** has changed over time in the rivers affected by the recent mining boom. We compared mining periods to pre-mining reference periods and found major increases in almost every case. 
+We built on our past work [^2][^3] and used Landsat satellite imagery to estimate how **suspended sediment concentration** has changed over time in the rivers affected by the recent mining boom. We compared mining periods to pre-mining reference periods and found major increases in almost every case. These changes likely help explain the widespread increases in river suspended sediment we identified in global rivers [^4].
 
 * * *
 
@@ -81,7 +81,16 @@ The code for this analysis is stored in this repository. Source data from Landsa
 
 [Analyze rivers that are too small for Landsat mapping](https://github.com/evandethier/global-alluvial-mining/blob/main/river-mining-tstm-length-analysis.R)  
 
+***
 
 
+#### References
+[^1]: Lawrence & Houseworth, P. (1866) Hydraulic mining near French Corral, Nevada County. Nevada County California, 1866. [Published] [Photograph] Retrieved from the Library of Congress, <https://www.loc.gov/item/2002719066/>.
+
+[^2]: Dethier, E. N., Sartain, S. L., & Lutz, D. A. (2019). Heightened levels and seasonal inversion of riverine suspended sediment in a tropical biodiversity hot spot due to artisanal gold mining. *Proceedings of the National Academy of Sciences*, 116(48), 23936-23941.
+
+[^3]: Dethier, E. N., Renshaw, C. E., & Magilligan, F. J. (2020). Toward improved accuracy of remote sensing approaches for quantifying suspended sediment: Implications for suspended‐sediment monitoring. *Journal of Geophysical Research: Earth Surface*, 125(7), e2019JF005033.
+
+[^4]: Dethier, E. N., Renshaw, C. E., & Magilligan, F. J. (2022). Rapid changes to global river suspended sediment flux by humans. *Science*, 376(6600), 1447-1452.
 
 

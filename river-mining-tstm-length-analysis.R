@@ -1,3 +1,5 @@
+library(data.table)
+library(ggplot2)
 #### IMPORT DATA ####
 # Elevated river reaches
 river_reaches_elevated_2020 <- fread('river_reaches_elevated_2020.csv')
@@ -12,7 +14,7 @@ site_metadata_all <- fread('rm_site_metadata.csv')[
 ]
 
 # Small river length
-tstm_river_length <- fread('mining_on_small_rivers_length.csv')[
+tstm_river_length <- fread(paste0(wd_imports, '/river_data_from_earth_engine/mining_on_small_rivers_length_20230404.csv'))[
   ,':='(
     site_no_spec = site_no,
     site_no = gsub(pattern = '_[0-9]+$', replace = '', x = site_no),
@@ -21,6 +23,9 @@ tstm_river_length <- fread('mining_on_small_rivers_length.csv')[
       ,':='(site_no = ifelse(site_no == 'peru_rio_malinowski_middle_agm_region7', 'peru_rio_malinowski_middle_agm_region', site_no))
     ]
 
+fwrite(tstm_river_length,
+       file = paste0(wd_imports, 
+                     '/river_data_from_earth_engine/mining_on_small_rivers_length_clean.csv'))
 #### ANALYZE SMALL RIVER LENGTH BY SITE ####
 tstm_river_length_summary <- tstm_river_length[
   ,.(small_river_length_km = sum(length_km, na.rm = T),
@@ -29,6 +34,11 @@ tstm_river_length_summary <- tstm_river_length[
 ][
   ,':='(site_tstm = ifelse(grepl('TSTM', site_no), 'Headwater sites', 'Large river sites'))
 ]
+
+fwrite(tstm_river_length_summary,
+       file = paste0(wd_imports, 
+                     '/river_data_from_earth_engine/mining_on_small_rivers_length_summary.csv'))
+
 # Mining area vs. affected small river length scatter plot
 tstm_scatter <- ggplot(tstm_river_length_summary, aes(x = area_km2, y = small_river_length_km, fill = site_tstm)) +
   geom_point(size = 4, color = 'black', pch = 21, lwd = 0.25) +
