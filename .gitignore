@@ -4,6 +4,7 @@
 
 # Session Data files
 .RData
+.DS_Store
 
 # User-specific files
 .Ruserdata
@@ -37,3 +38,12 @@ vignettes/*.pdf
 
 # R Environment Variables
 .Renviron
+global-alluvial-mining.Rproj
+
+# Folders
+imports/
+exports/
+figures/
+global-asgm-exports/
+writing/
+global-asgm-imports/

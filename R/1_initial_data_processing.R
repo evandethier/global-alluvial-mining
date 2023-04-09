@@ -1,8 +1,9 @@
 # Import Landsat data (raw output from Google Earth Engine)
-#### LIBRARY IMPORTS ####
+#### i. LIBRARY IMPORTS ####
 library(data.table)
 
 library(ggplot2)
+library(maps)
 library(scales)
 library(ggthemes)
 library(ggpubr)
@@ -22,7 +23,7 @@ library(readxl)
 library(patchwork)
 library(egg)
 
-#### THEMES ####
+#### ii. THEMES ####
 theme_evan <- theme_bw() +
   theme(
     panel.grid.minor = element_blank(),
@@ -89,16 +90,16 @@ long_dd_lab <- function(l){
   return(label)}
 
 
-#### SET DIRECTORIES ####
+#### iii. SET DIRECTORIES ####
 # Set root directory
-wd_root <- "/Users/e.dethier/Library/CloudStorage/OneDrive-BowdoinCollege/research/global-alluvial-mining"
+wd_root <- getwd()
 
 # Imports folder (store all import files here)
-wd_imports <- paste0(wd_root,"/global-asgm-imports/")
+wd_imports <- paste0(wd_root,"/imports/")
 # Exports folder (save all figures, tables here)
-wd_exports <- paste0(wd_root,"/global-asgm-exports/")
+wd_exports <- paste0(wd_root,"/exports/")
 
-wd_figures <- paste0(wd_exports, "global-asgm-figures/")
+wd_figures <- paste0(wd_root, "/figures/")
 
 # Create folders within root directory to organize outputs if those folders do not exist
 export_folder_paths <- c(wd_imports, wd_exports, wd_figures)
@@ -108,11 +109,8 @@ for(i in 1:length(export_folder_paths)){
     dir.create(path_sel)}
 }
 
-# Set working directory for import and export
-setwd(wd_imports)
 
-
-#### IMPORT DATA AND DEFINE COLUMNS ####
+#### 1. IMPORT DATA AND DEFINE COLUMNS ####
 # Data can be downloaded from <10.5281/zenodo.7699122>
 # Once downloaded, the `landsat_data_from_earth_engine` folder 
 # needs to be moved into the global-asgm-imports folder.
@@ -120,44 +118,16 @@ setwd(wd_imports)
 # Can be done using: https://inbo.github.io/inborutils/reference/download_zenodo.html package
 
 # Import Landsat river profile data for each batch of mining sites
-asgm_river_import_1 <- fread(
-  paste0('landsat_data_from_earth_engine/', 'global_agm_ls57_rawBands_b7lt500.csv'))[
-  ,':='(.geo = NULL)
-]
+# Get filenames of each batch of mining sites
+profile_reflectance_data_files <- list.files(pattern = 'ls57_rawBands_b7lt500.csv',
+                                             paste0(wd_imports,'landsat_data_from_earth_engine/'))
 
-asgm_river_import_2 <- fread(
-  paste0('landsat_data_from_earth_engine/', 'global_agm_2_ls57_rawBands_b7lt500.csv'))[
-  ,':='(.geo = NULL)
-]
-
-asgm_river_import_3 <- fread(
-  paste0('landsat_data_from_earth_engine/', 'global_agm_3_ls57_rawBands_b7lt500.csv'))[
-  ,':='(.geo = NULL)
-]
-
-asgm_river_import_4 <- fread(
-  paste0('landsat_data_from_earth_engine/', 'global_agm_4_ls57_rawBands_b7lt500.csv'))[
-  ,':='(.geo = NULL)
-]
-
-asgm_river_import_5 <- fread(
-  paste0('landsat_data_from_earth_engine/', 'global_agm_5_ls57_rawBands_b7lt500.csv'))[
-  ,':='(.geo = NULL)
-]
-
-asgm_river_import_6 <- fread(
-  paste0('landsat_data_from_earth_engine/', 'global_agm_6_ls57_rawBands_b7lt500.csv'))[
-  ,':='(.geo = NULL)
-]
-
-
-
-
-
-# Combine Landsat sample data into one datatable
-asgm_river_import <- rbind(asgm_river_import_1, asgm_river_import_2, asgm_river_import_3,
-                           asgm_river_import_4, asgm_river_import_5, asgm_river_import_6, 
-                           use.names = T, fill = T)
+# Combine Landsat sample data into one data.table
+asgm_river_import <- rbindlist(
+  lapply(
+    paste0(wd_imports, 'landsat_data_from_earth_engine/', profile_reflectance_data_files), 
+    fread),
+  use.names = T, fill = T)[,':='(.geo = NULL)]
 
 # Function to calculate distance along transect
 # Uses final extension of ID string (after the last underscore)
@@ -167,20 +137,20 @@ getDistance <- function(x){return(as.numeric(strsplit(x, '_')[[1]][6]))}
 # Will replace this with master metadata table
 getCountry <- function(x){return(strsplit(x, '_')[[1]][1])}
 
-# Compute distance and country for each row in main data table
-distances <- unlist(lapply(asgm_river_import$`system:index`, getDistance))
-countries <- unlist(lapply(asgm_river_import$name, getCountry))
-
 # Add distance and country columns to main data table
-asgm_river_import$distance_km <- distances
-asgm_river_import$country <- countries
+# **Takes about three minutes**
+asgm_river_import <- asgm_river_import[,':='(
+  distance_km = lapply(`system:index`, getDistance),
+  country = lapply(name, getCountry))]
 
-# PREPARE DATA COLUMNS, MAKE LANDSAT MATCHUP, CALCULATE SSC ESTIMATE
+
+#### 1A. PREPARE DATA COLUMNS, MAKE LANDSAT MATCHUP, CALCULATE SSC ESTIMATE ####
 # Import Landsat data
+# **Takes about three minutes**
 
 # Landsat data do have station information
 # They also have latitude and longitude
-asgm_river_landsat_raw <- na.omit(asgm_river_import[,
+asgm_river_import <- na.omit(asgm_river_import[,
                                           ':='(
                                             # site_no = paste0('st_', site_no),
                                             site_no = name,
@@ -254,21 +224,21 @@ asgm_river_landsat_raw <- na.omit(asgm_river_import[,
                                                              ifelse(year(sample_dt) > 2019, 2020,
                                                                     year(sample_dt) - year(sample_dt)%%5)))]
 # Change station_nm column to a distance column (10 km increments)
-asgm_river_landsat_raw <- asgm_river_landsat_raw[,':='(station_nm = station_nm*2 - (station_nm*2)%%10)]
+asgm_river_import <- asgm_river_import[,':='(station_nm = as.numeric(station_nm)*2 - (as.numeric(station_nm)*2)%%10)]
 
-#### CALCULATE SSC ####
+#### 2. CALCULATE SSC ####
 # Apply SSC calibration models to make predictions based on new surface reflectance inputs (cluster needed)
 # First, import function file
-ssc_cluster_funs <- readRDS('SSC_cluster_function.rds')
+ssc_cluster_funs <- readRDS(paste0(wd_imports, 'SSC_cluster_function.rds'))
 
 # And import cluster centers
-clusters_calculated_list <- readRDS('cluster_centers.rds')
+clusters_calculated_list <- readRDS(paste0(wd_imports,'cluster_centers.rds'))
 # Set number of cluster centers (6)
 cluster_n_best <- 6
 clustering_vars <- colnames(clusters_calculated_list[[cluster_n_best]]$centers)
 
 # Scaling for cluster calculation
-site_band_scaling <- readRDS('site_band_scaling_all.rds')
+site_band_scaling <- readRDS(paste0(wd_imports,'site_band_scaling_all.rds'))
 # Regressors
 regressors_all <- c('B1', 'B2', 'B3', 'B4', 'B5', 'B7', # raw bands
                     'B1.2', 'B2.2', 'B3.2', 'B4.2', 'B5.2', 'B7.2', # squared bands
@@ -338,7 +308,7 @@ getCluster_monthly_decadal <- function(df,clustering_vars,n_centers, kmeans_obje
 }
 # Get cluster for each site based on typical spectral profile
 # This takes a long time to run
-asgm_river_landsat_cl <- getCluster_monthly_decadal(asgm_river_landsat_raw, 
+asgm_river_landsat_cl <- getCluster_monthly_decadal(asgm_river_import, 
                                        clustering_vars,cluster_n_best, 
                                        clusters_calculated_list[[cluster_n_best]])
 
@@ -355,9 +325,13 @@ asgm_river_landsat_pred <- getSSC_pred(na.omit(asgm_river_landsat_cl, cols = c(r
 # Add distance column based on station_nm (which has been standing in for distance)
 asgm_river_landsat_pred <- asgm_river_landsat_pred[,':='(distance_km = station_nm,
                                                          year = year(sample_dt))][
-                          ,':='(distance_10km = distance_km - distance_km%%10)]
+                          ,':='(distance_10km = distance_km - distance_km%%10)][
+                            ,.(site_no, station_nm, distance_km, distance_10km, month, year, decade, Latitude, Longitude,sample_dt,
+                               num_pix, B1 = round(B1), B2 = round(B2), B3 = round(B3), B4 = round(B4), B6 = round(B6),
+                               cluster, SSC_mgL)
+                          ]
 
-fwrite(asgm_river_landsat_pred, 'asgm_river_landsat_pred.csv')
+fwrite(asgm_river_landsat_pred, paste0(wd_imports,'asgm_river_landsat_pred.csv'))
 
 
 #### FILL GAPS IN TIMESERIES WITH MOVING AVERAGE CALCULATIONS ####
@@ -374,8 +348,8 @@ ssc_avg_timeseries <- asgm_river_landsat_pred[SSC_mgL < 15000][
 # To calculate moving average first must formally structure data into a regular matrix (dimensions: site, time, distance)
 # Make a data.table for each site, 10 km reach, month, and year 
 # Get min and max months
-min_year <- min(year(asgm_river_landsat_pred$landsat_dt))
-max_year <- max(year(asgm_river_landsat_pred$landsat_dt))
+min_year <- min(year(asgm_river_landsat_pred$sample_dt))
+max_year <- max(year(asgm_river_landsat_pred$sample_dt))
 
 n_years <- max_year - min_year + 1
 
@@ -417,4 +391,4 @@ ssc_ma_timeseries <- ssc_avg_timeseries_reg[order(year + month/12)
                                                   SSC_mgL_N_3yr = frollapply(FUN = getN, SSC_mgL,n = 36, fill = NA)),
                                             by = .(site_no, distance_10km)]
 
-fwrite(ssc_ma_timeseries, 'river_mining_ssc_ma_timeseries.csv')
+fwrite(ssc_ma_timeseries, paste0(wd_imports,'river_mining_ssc_ma_timeseries.csv'))

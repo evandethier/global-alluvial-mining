@@ -23,6 +23,11 @@ tstm_river_length <- fread(paste0(wd_imports, '/river_data_from_earth_engine/min
       ,':='(site_no = ifelse(site_no == 'peru_rio_malinowski_middle_agm_region7', 'peru_rio_malinowski_middle_agm_region', site_no))
     ]
 
+sum(tstm_river_length$length_km)
+sum(tstm_river_length$area_km2)
+
+100 * sum(tstm_river_length$area_km2) * 100
+
 fwrite(tstm_river_length,
        file = paste0(wd_imports, 
                      '/river_data_from_earth_engine/mining_on_small_rivers_length_clean.csv'))

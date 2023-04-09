@@ -2,7 +2,7 @@
 library(rgdal)
 #### IMPORT/EXPORT RAW DATA FROM GOOGLE EARTH ####
 wd_root <- getwd()
-wd_imports <- paste0(wd_root, '/global-asgm-imports/')
+wd_imports <- paste0(wd_root, '/imports/')
 wd_mining_mapping_import_folder <- paste0(wd_imports, 'mining_river_profiles/')
 wd_mining_mapping_folder <- paste0(wd_imports, 'mining_data_for_earth_engine/')
 ## Export for Google Earth Engine

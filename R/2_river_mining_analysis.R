@@ -1,7 +1,8 @@
-#### LIBRARY IMPORTS ####
+#### i. LIBRARY IMPORTS ####
 library(data.table)
 
 library(ggplot2)
+library(maps)
 library(scales)
 library(ggthemes)
 library(ggpubr)
@@ -21,10 +22,7 @@ library(readxl)
 library(patchwork)
 library(egg)
 
-# First, remove all existing data
-rm(list = ls())
-
-#### THEMES ####
+#### ii. THEMES ####
 theme_evan <- theme_bw() +
   theme(
     panel.grid.minor = element_blank(),
@@ -91,45 +89,46 @@ long_dd_lab <- function(l){
   return(label)}
 
 abbrev_year <- function(l){
-  label <- c()
+  label <- c() 
   for(i in 1:length(l)){
     label_sel <- paste0("'",substr(as.character(l[i]),3,4))
-    label <- c(label, label_sel)
+  label <- c(label, label_sel)  
   }
   return(label)}
 
-#### SET DIRECTORIES ####
+#### iii. SET DIRECTORIES ####
 # Set root directory
-wd_root <- "/Users/e.dethier/Library/CloudStorage/OneDrive-BowdoinCollege/research/global-alluvial-mining"
+wd_root <- getwd()
 
 # Imports folder (store all import files here)
-wd_imports <- paste0(wd_root,"/global-asgm-imports/")
+wd_imports <- paste0(wd_root,"/imports/")
 # Exports folder (save all figures, tables here)
-wd_exports <- paste0(wd_root,"/global-asgm-exports/")
+wd_exports <- paste0(wd_root,"/exports/")
 
-wd_figures <- paste0(wd_exports, "global-asgm-figures/")
+wd_figures <- paste0(wd_root, "/figures/")
+
+wd_oil_palm_subfolder <- paste0(wd_imports, 'oil_palm_and_mining_rivers_ssc_data/')
 
 # Create folders within root directory to organize outputs if those folders do not exist
-export_folder_paths <- c(wd_imports, wd_exports, wd_figures)
+export_folder_paths <- c(wd_imports, wd_exports, wd_figures, wd_oil_palm_subfolder)
 for(i in 1:length(export_folder_paths)){
   path_sel <- export_folder_paths[i]
   if(!dir.exists(path_sel)){
     dir.create(path_sel)}
 }
 
-# Set working directory for import and export
-setwd(wd_imports)
 
 
-#### IMPORT DATA ####
+
+#### 1. IMPORT DATA ####
 # Then import landsat data
-asgm_river_landsat_pred <- fread('asgm_river_landsat_pred.csv')
+asgm_river_landsat_pred <- fread(paste0(wd_imports, 'asgm_river_landsat_pred.csv'))
 
 # Import SSC data (derived from landsat)
-ssc_ma_timeseries <- fread('river_mining_ssc_ma_timeseries.csv')
+ssc_ma_timeseries <- fread(paste0(wd_imports,'river_mining_ssc_ma_timeseries.csv'))
 # All mining locations
 # All locations
-glasgm_locations_import <- readOGR('ASGM_global_sites_10232022.kml')
+glasgm_locations_import <- readOGR(paste0(wd_imports,'ASGM_global_sites_10232022.kml'))
 # writeOGR(glasgm_locations_import, dsn = './mining_data_for_earth_engine/glasgm_locations_import', layer = 'glasgm_locations_import', driver = 'ESRI Shapefile')
 
 global_asgm_datatable_import <- data.table(data.frame(glasgm_locations_import))[
@@ -137,11 +136,17 @@ global_asgm_datatable_import <- data.table(data.frame(glasgm_locations_import))[
 ][,.(Latitude, Longitude, Name)]
 
 # Import site metadata
-site_metadata <- data.table(read_excel('agm-transect-metadata.xlsx'))
+site_metadata <- data.table(read_excel(paste0(wd_imports,'agm-transect-metadata.xlsx')))
+profile_metadata <- data.table(read_excel(paste0(wd_imports,'agm-transect-metadata.xlsx'), sheet = 'profile_data'))
 
 # Import topographic data for river transects (distance, elevation, drainage area)
+# Import river topographic profile data for each batch of mining sites
+# Get filenames of each batch of mining sites
+profile_topo_data_files <- list.files(pattern = 'topo',
+                                             paste0(wd_imports,'landsat_data_from_earth_engine/'))
+
 topo_data <- rbindlist(lapply( 
-  list.files(pattern = 'topo'), 
+  paste0(paste0(wd_imports,'landsat_data_from_earth_engine/',profile_topo_data_files)),
   fread),
   use.names = T, fill = T)[
     # ,':='(distance_km = unlist(lapply(`system:index`, strsplit, '_'))[2])
@@ -160,7 +165,7 @@ topo_data <- rbindlist(lapply(
 
 
 # Import gold price data from gold.org
-gold_prices <- fread('gold-prices-monthly.csv')[
+gold_prices <- fread(paste0(wd_imports,'gold-prices-monthly.csv'))[
   ,':='(year = month(mdy(Month))/12 + year(mdy(Month)))
 ]
 
@@ -169,7 +174,7 @@ transects_invalid <- c('indonesia_alue_tho_agm_region', # No data after 2012
                        'indonesia_tutut_agm_region' # No data after 2012
 )
 
-#### COMPUTE BASIC STATISTICS ON RAW DATA ####
+#### 2. COMPUTE BASIC STATISTICS ON RAW DATA ####
 
 # Number of sites, transect length, images per site, pixels per segment
 site_summary_stats <- asgm_river_landsat_pred[,.(distance_km = max(distance_km, na.rm = T),
@@ -199,6 +204,8 @@ site_metadata <- site_metadata[,':='(country_display = ifelse(grepl('Phil', coun
 
 # Number of sites for gold
 mining_mineral <- site_metadata[,.(mineral = .N), by = `Mining type`]
+
+## Fig. S1
 # Plot number of mining areas per country
 country_n_sites_summary <- ggplot(site_metadata) + 
   geom_bar(aes(x = country_display, fill = continent_display), color = 'black', lwd = 0.2, alpha = 0.8, width = 0.85) +
@@ -230,12 +237,12 @@ for(i in which(grepl("strip-l", country_n_sites_summary$layout$name))){
   country_n_sites_summary$grobs[[i]]$layout$clip <- "off"
 }
 
-ggsave(country_n_sites_summary, filename = paste0(wd_figures, 'country_n_sites_summary.pdf'),
+ggsave(country_n_sites_summary, filename = paste0(wd_figures, 'figS1_country_n_sites_summary.pdf'),
        width = 5, height = 10, useDingbats = F)
-ggsave(country_n_sites_summary, filename = paste0(wd_figures, 'country_n_sites_summary.png'),
+ggsave(country_n_sites_summary, filename = paste0(wd_figures, 'figS1_country_n_sites_summary.png'),
        width = 5, height = 10)
 
-#### MAP MINING SITES ####
+#### 3. NUMBER OF MINING SITES OVER TIME ####
 # Create data table from all AGM locations
 # Each site (indiv. mining area with coordinates) is joined to metadata (mining onset, affected/unaffected kms, etc.)
 global_asgm_datatable <- merge(global_asgm_datatable_import[,':='(site_no = Name)],
@@ -264,7 +271,10 @@ river_names <- unique(asgm_river_landsat_pred$site_no)
 n_agm_transects <- nrow(transect_n_sites)
 
 # Export total number of reaches
-fwrite(data.table('site_tstm' = c('Headwater sites', 'Large river sites'), 'N_total_rivers' = c(n_agm_sites_TSTM, n_agm_transects)), file = 'small_and_large_river_n_sites.csv')
+fwrite(data.table('site_tstm' = c('Headwater sites', 'Large river sites'), 
+                  'N_total_rivers' = c(n_agm_sites_TSTM, n_agm_transects)), 
+       file = paste0(wd_imports, 'small_and_large_river_n_sites.csv'))
+
 # How many sites within 20 degrees of Equator
 sites_within_20_degrees <- nrow(global_asgm_datatable[(Latitude) <= 20])
 
@@ -280,7 +290,9 @@ sites_post_2010 <- site_metadata[`Mining onset` >= 2010][
      percent_sites_post_2010 = round(.N/nrow(site_metadata)*100,1))]
 
 
+## Fig. S2
 # Plot summary statistics for transects
+## Fig. S2A
 # Transect images/river histogram
 site_summary_n_imgs_plot <- ggplot(site_summary_stats) + 
   geom_histogram(aes(x = n_imgs), bins = 20, fill = '#F2BC57', color = 'black', lwd = 0.2) +
@@ -293,6 +305,7 @@ site_summary_n_imgs_plot <- ggplot(site_summary_stats) +
   labs(x = 'N images per river',
        y = 'N rivers')
 
+## Fig. S2B
 # Transect distance histogram
 site_summary_distance_plot <- ggplot(site_summary_stats) + 
   geom_histogram(aes(x = distance_km), bins = 20, fill = '#BF5349', color = 'black', lwd = 0.2) +
@@ -305,7 +318,16 @@ site_summary_distance_plot <- ggplot(site_summary_stats) +
   labs(x = 'River kilometers',
        y = 'N rivers')
 
+# Combine number of images/river and river distance
+site_summary_distance_nimages_plot <- ggarrange(site_summary_n_imgs_plot, site_summary_distance_plot,
+                                                nrow = 2, labels = c('a','b'))
+ggsave(site_summary_distance_nimages_plot, filename = paste0(wd_figures, 'figS2_site_summary_distance_nimages_plot.pdf'),
+       width = 4, height = 7, useDingbats = F)
+ggsave(site_summary_distance_nimages_plot, filename = paste0(wd_figures, 'figS2_site_summary_distance_nimages_plot.png'),
+       width = 4, height = 7)
+
 # Number of pixels per transect segment histogram
+# (Not used in paper)
 site_summary_n_pixels_plot <- ggplot(site_summary_stats) + 
   geom_histogram(aes(x = avg_n_pix), bins = 20, fill = 'grey70', color = 'black', lwd = 0.2) +
   season_facet + 
@@ -324,7 +346,8 @@ n_sites_per_yr <- global_asgm_datatable[,.(n_sites = .N),
                                         by = `Mining onset`][order(`Mining onset`)][
                                           ,':='(n_sites_cumul = cumsum(n_sites))
                                         ]
-# Mining onset histogram (by site, not transect)
+## Fig. 1f
+# Mining onset histogram (by site, not profile)
 mining_onset_histogram <- ggplot(global_asgm_datatable) + 
   geom_bar(aes(x = `Mining onset`), fill = '#F2BE22', color = 'black', lwd = 0.2) +
   geom_line(data = n_sites_per_yr, aes(x = `Mining onset`, y = n_sites_cumul/3.5)) +
@@ -343,21 +366,17 @@ mining_onset_histogram <- ggplot(global_asgm_datatable) +
   labs(x = 'Year of mining onset',
        y = 'N sites (ann.)')
 
-ggsave(mining_onset_histogram, filename = paste0(wd_figures, 'mining_onset_histogram.pdf'),
+ggsave(mining_onset_histogram, filename = paste0(wd_figures, 'fig1f_mining_onset_histogram.pdf'),
        width = 8, height = 2.5, useDingbats = F)
-ggsave(mining_onset_histogram, filename = paste0(wd_figures, 'mining_onset_histogram.png'),
+ggsave(mining_onset_histogram, filename = paste0(wd_figures, 'fig1f_mining_onset_histogram.png'),
        width = 8, height = 2.5)
 
 
-# Combine number of images/river and river distance
-site_summary_distance_nimages_plot <- ggarrange(site_summary_n_imgs_plot, site_summary_distance_plot,
-                                                nrow = 2, labels = c('a','b'))
-ggsave(site_summary_distance_nimages_plot, filename = paste0(wd_figures, 'site_summary_distance_nimages_plot.pdf'),
-       width = 4, height = 7, useDingbats = F)
-ggsave(site_summary_distance_nimages_plot, filename = paste0(wd_figures, 'site_summary_distance_nimages_plot.png'),
-       width = 4, height = 7)
+
+#### 4. MAP MINING SITES ####
 
 world_map <- data.table(map_data(map = 'world'))
+## Fig. 1A
 # Map each mining site (individual mining areas)
 global_asgm_datatable <- global_asgm_datatable[,':='(
   simple_mining_category = ifelse(!(`Mining type` %in% c('Gold', 'Diamonds', 'Nickel')), 'Other', `Mining type`))]
@@ -387,22 +406,19 @@ global_asgm_sites_map <- ggplot() +
         legend.key.width = unit(0.4,"cm"),
         legend.title = element_markdown())
 
-ggsave(global_asgm_sites_map, filename = paste0(wd_figures, 'global_asgm_sites_map.pdf'),
+ggsave(global_asgm_sites_map, filename = paste0(wd_figures, 'fig1a_global_asgm_sites_map.pdf'),
        width = 11, height = 4, useDingbats = F)
-ggsave(global_asgm_sites_map, filename = paste0(wd_figures, 'global_asgm_sites_map.png'),
+ggsave(global_asgm_sites_map, filename = paste0(wd_figures, 'fig1a_global_asgm_sites_map.png'),
        width = 11, height = 4)
 
 
-####  IDENTIFY AND ANALYZE REFERENCE REACHES ####
+####  5. IDENTIFY AND ANALYZE REFERENCE REACHES ####
 # Calculate average SSC for each 10 km segment
 
 # Determine reference period for each transect
 # For transects with mining, reference period will be the non-mining period 
 # (Usually beginning. Sometimes middle or end, like in Brazil)
 # For transects without mining, reference period will be entire record
-# TO DO: For transects with mining at different points along, reference period may vary depending on watershed position
-# After determining reference period for each transect, calculate the avg. & SD of SSC for the reference period
-# Do this on a reach-by-reach basis, probably 10 km
 
 # Then for each transect, make a column that determines whether it will be a by-reach reference 
 # (for transects with a pre-mining period).
@@ -423,7 +439,7 @@ site_metadata <- site_metadata[
         ref_reach = `Reference reach (if "Reference", ref. reach; if name of reach, that reach is ref. reach for this row)`)][
           ,':='(ref_reach = ifelse(ref_reach == 'Reference', `Transect name`, ref_reach))]
 
-fwrite(site_metadata, 'rm_site_metadata.csv')
+fwrite(site_metadata, paste0(wd_imports,'rm_site_metadata.csv'))
 # Get timespan and distances for each reference reach
 site_reference_period <- site_metadata[
   ,.(onset_year = min(`Mining onset`, na.rm = T),
@@ -456,6 +472,19 @@ reference_reaches_and_periods <- site_reference_period[!duplicated(site_referenc
 # Get rivers that are reference reaches
 reference_rivers <- unique(reference_reaches_and_periods$site_no)
 
+reference_river_data_daily <- asgm_river_landsat_pred[site_no %chin% reference_rivers][
+  reference_reaches_and_periods, on = c('site_no')
+][year >= reference_period_start & year < reference_period_end & 
+    distance_10km <= reference_distance_end & distance_km >= reference_distance_start &
+    SSC_mgL < 4500]
+
+# [
+#   ,.(SSC_mgL_reference = mean(SSC_mgL, na.rm = T),
+#      SSC_mgL_reference_sd = sd(SSC_mgL, na.rm = T),
+#      N = .N),
+#   by = .(site_no, Latitude, Longitude, year, month, distance_10km)
+# ]
+
 # Make a data table of just the reference river data
 # limit table to only within the reference period window
 # Then take an average and standard deviation for the period
@@ -484,6 +513,7 @@ reference_river_data <- reference_river_data[
         reference_river = ifelse(ref_reach == transect_name, 'Mining river', 'Reference river'))]
 
 # Plot reference reaches
+# (Not used in paper)
 reference_reach_combined_plot <- ggplot(reference_river_data[reference_river == 'Reference river'][
   ,':='(SSC_mgL_reference_mean = mean(SSC_mgL_reference, na.rm = T)),
   by = .(ref_reach, distance_10km)], 
@@ -519,11 +549,11 @@ reference_river_data_simple <- reference_river_data[
 # Transects with pre-mining (or post-mining) data have reference data matched by kilometer
 
 
-#### REFERENCE REACH NOTES ####
+## REFERENCE REACH NOTES ##
 # Angola andrada reference reach ends at 78 km
 # Colombia: colombia_antioquia_agm_region very high SSC reference. Worth checking.
 
-#### JOIN TRANSECT DATA WITH REFERENCE DATA ####
+#### 6. JOIN TRANSECT DATA WITH REFERENCE DATA ####
 # GOALS:
 # 1. Join moving average data with reference data. Two join types:
 # a) Simple (just annual avg. & SD for mining area joined with single avg & sd reference)
@@ -554,7 +584,7 @@ ssc_ma_annual_avg_monthly <- ssc_ma_timeseries[!is.na(SSC_mgL_3yr)][
 # 3. Get annual average for each river segment and year
 ssc_ma_annual_avg_full <- ssc_ma_timeseries[
   ,.(SSC_mgL_3yr = mean(SSC_mgL_3yr, na.rm = T),
-     SSC_mgL_sd_3yr = mean(SSC_mgL_sd_3yr, na.rm = T),
+     SSC_mgL_sd_3yr = sqrt(mean(SSC_mgL_sd_3yr, na.rm = T)^2 + 0.71^2),
      SSC_mgL_N_3yr = mean(SSC_mgL_N_3yr, na.rm = T)),
   by = .(site_no, distance_10km, year)][
     transect_metadata, on = 'site_no'
@@ -585,7 +615,7 @@ ssc_ma_annual_full_transect_avg <- ssc_ma_annual_avg_full[
         N_obs = ifelse(is.na(N_obs), 0, round(N_obs)))
 ]
 
-#### CALCULATE Z-SCORES FOR EVERY MONTHLY OBSERVATION FOR EACH 10 KM RIVER REACH ####
+#### 7. CALCULATE Z-SCORES FOR EVERY MONTHLY OBSERVATION FOR EACH 10 KM RIVER REACH ####
 # Calculate simple Z-score for each year for each 10 km reach along each river transect
 # Each z-score is relative to a reference distribution of SSC values
 # Reference mean and SD is uniform for each transect (doesn't vary with distance)
@@ -616,7 +646,7 @@ ssc_ma_annual_full_transect_avg <- ssc_ma_annual_full_transect_avg[
 ]
 
 # Import transect name for display
-transect_name_display <- data.table(read_excel('agm-transect-metadata.xlsx'))[
+transect_name_display <- data.table(read_excel(paste0(wd_imports,'agm-transect-metadata.xlsx'), sheet = 'profile_data'))[
   ,.(`Transect name`, `Transect full display name`, `Transect display name`)][
     ,':='(transect_display_name = `Transect display name`,
           site_no = `Transect name`)
@@ -626,8 +656,9 @@ transect_name_display <- data.table(read_excel('agm-transect-metadata.xlsx'))[
 transect_name_display <- na.omit(transect_name_display[!duplicated(transect_name_display)])
 
 ssc_ma_annual_full_transect_avg <- ssc_ma_annual_full_transect_avg[transect_name_display, on = 'site_no']
-#### SELECT AND EXPORT OIL PALM SITES FOR SUB-ANALYSIS ####
-## This analysis is done in the oil_palm_sub_analysis.R script ##
+
+#### 8. SELECT AND EXPORT OIL PALM SITES FOR SUB-ANALYSIS ####
+## This analysis is done in the 3_oil_palm_sub_analysis.R script ##
 # Test moving average for a given transect + distance combination
 selected_ma_sites_all <- c('indonesia_batang_hari_trib2','indonesia_batang_hari_bedaro_agm_region','indonesia_batang_hari',
                            'indonesia_kampar_trib','indonesia_maura_soma_agm_region','indonesia_west_kalimantan_monggo_agm_region',
@@ -638,20 +669,20 @@ selected_ma_sites_all <- c('indonesia_batang_hari_trib2','indonesia_batang_hari_
 for(oil_palm_site_sel in 1:length(selected_ma_sites_all)){
   selected_ma_site <- selected_ma_sites_all[oil_palm_site_sel]
 
-# Join with transect name display for plotting
-ssc_ma_timeseries_test <- transect_name_display[
-  ssc_ma_timeseries[site_no == selected_ma_site], on = 'site_no'
-]
-# Set country and mining onset
-ssc_ma_timeseries_test$Country <- transect_metadata[site_no == ssc_ma_timeseries_test$site_no[1]]$Country
-ssc_ma_timeseries_test$mining_onset <- transect_metadata[site_no == ssc_ma_timeseries_test$site_no[1]]$mining_onset
-
-# Export data for analysis in oil_palm_sub_analysis.R script
-fwrite(ssc_ma_timeseries_test, file = paste0('ssc_ma_timeseries_', selected_ma_site, '.csv'))
+  # Join with transect name display for plotting
+  ssc_ma_timeseries_test <- transect_name_display[
+    ssc_ma_timeseries[site_no == selected_ma_site], on = 'site_no'
+  ]
+  # Set country and mining onset
+  ssc_ma_timeseries_test$Country <- transect_metadata[site_no == ssc_ma_timeseries_test$site_no[1]]$Country
+  ssc_ma_timeseries_test$mining_onset <- transect_metadata[site_no == ssc_ma_timeseries_test$site_no[1]]$mining_onset
+  
+  # Export data for analysis in 3_oil_palm_sub_analysis.R script
+  fwrite(ssc_ma_timeseries_test, file = paste0(wd_oil_palm_subfolder, 'ssc_ma_timeseries_', selected_ma_site, '.csv'))
 }
 
 
-#### INDIVIDUAL MINING TRANSECT TIMESERIES ####
+#### 9. INDIVIDUAL MINING TRANSECT TIMESERIES ####
 mining_onset_table <- site_metadata[`Transect name` %in% transect_name_display$site_no,
                                     .(site_no, continent_display, `Mining onset`, `Reference km end`, `Reference period start`, `Reference period end`)][
   ,.(
@@ -668,6 +699,7 @@ representative_transects <- c('brazil_kayapo_preserve_agm_region', 'venezuela_gu
 
 # Run through every transect and export timeseries from 20-50 km downstream of upstream-most mining
 # Save data for representative transects for subsequent visualization
+# **If plot_save is set to "no save", individual plots will not be saved (faster)**
 plot_save <- 'no save'
 for(mining_transect_num in 1:nrow(mining_onset_table)){
   if(mining_transect_num == 1){
@@ -777,6 +809,8 @@ representative_continent_summary_data <- representative_continent_timeseries_dat
      ),
   by = .(transect_display_name, continent_display, site_no)
 ]
+
+## Fig. 2c
 representative_continent_timeseries_plots <- ggplot(representative_continent_timeseries_data, 
                                                     aes(x = (year + month/12), y = SSC_mgL, 
                                                         color = period)) +
@@ -798,7 +832,7 @@ representative_continent_timeseries_plots <- ggplot(representative_continent_tim
   )
   
 
-#### AVERAGE ANNUAL Z-SCORE FOR EACH TRANSECT (NO DISTANCE COMPONENT) ####
+#### 10. AVERAGE ANNUAL Z-SCORE FOR EACH TRANSECT (NO DISTANCE COMPONENT) ####
 # Compute average z-score for each year along full mining area for each transect
 ssc_ma_annual_avg_zscore <- ssc_ma_annual_full_transect_avg[
   ,.(SSC_mgL = mean(SSC_mgL_3yr, na.rm = T),
@@ -823,6 +857,7 @@ ssc_ma_annual_avg_SSC <- ssc_ma_annual_full_transect_avg[
 
 # Plot Z-score distributions for reference vs. active mining
 # at example rivers
+# (Not used in paper)
 reference_vs_active_z_score_histograms_example_plot <- ggplot(ssc_ma_annual_full_transect_avg[
   grepl(pattern = 'peru', x = site_no) & 
     !is.na(SSC_z_score)]) +
@@ -877,6 +912,8 @@ ssc_response_streams_subset_means <- ssc_response_streams_subset[
   ,.(SSC_z_score = mean(SSC_z_score, na.rm = T)),
   by = .(reference)
 ]
+
+## Fig. 2a inset
 # Histogram plot of mining vs. reference at each river
 ssc_response_streams_ssc_distribution_vs_reference_plot <- ggplot(ssc_response_streams_subset) +
   geom_histogram(aes(y = SSC_z_score, fill = reference), bins = 20,
@@ -925,7 +962,7 @@ n_sites_ssc_response_continent <- ssc_response_streams_subset_summary[
   by = .(continent_display)
 ]
 
-
+## Fig. 2a
 # Plot with years since mining onset
 ssc_z_ts_from_mining_onset_plot <- ggplot(ssc_response_streams_subset,
 aes(x = year - mining_onset + 3, y = SSC_z_score)) +
@@ -945,6 +982,7 @@ aes(x = year - mining_onset + 3, y = SSC_z_score)) +
   ) +
   theme(axis.title.y = element_markdown())
 
+## Fig. 2b
 # Facet by continent
 ssc_z_ts_from_mining_onset_continent_plot <- ssc_z_ts_from_mining_onset_plot + 
   facet_wrap(.~continent_display) +
@@ -957,6 +995,7 @@ ssc_z_ts_from_mining_onset_continent_plot_with_indiv <- ssc_z_ts_from_mining_ons
                aes(group = site_no), alpha = 0.2) +
   scale_y_continuous(limits = c(NA, 20))
 
+# (Not used in paper)
 ssc_z_ts_from_mining_onset_combined_plot <- ssc_z_ts_from_mining_onset_plot /
   # ssc_z_ts_from_mining_onset_continent_plot +
   ssc_z_ts_from_mining_onset_continent_plot_with_indiv +
@@ -964,11 +1003,13 @@ ssc_z_ts_from_mining_onset_combined_plot <- ssc_z_ts_from_mining_onset_plot /
   theme(plot.tag = element_text(face = 'bold'))
 
 
-ggsave(ssc_z_ts_from_mining_onset_combined_plot, filename = paste0(wd_figures, 'ssc_z_ts_from_mining_onset_combined_plot.pdf'),
-       useDingbats = F, width = 5, height = 8)
-ggsave(ssc_z_ts_from_mining_onset_combined_plot, filename = paste0(wd_figures, 'ssc_z_ts_from_mining_onset_combined_plot.png'),
-       width = 5, height = 8)
+# ggsave(ssc_z_ts_from_mining_onset_combined_plot, filename = paste0(wd_figures, 'ssc_z_ts_from_mining_onset_combined_plot.pdf'),
+#        useDingbats = F, width = 5, height = 8)
+# ggsave(ssc_z_ts_from_mining_onset_combined_plot, filename = paste0(wd_figures, 'ssc_z_ts_from_mining_onset_combined_plot.png'),
+#        width = 5, height = 8)
 
+## Fig 2
+# Combined 2a, 2a inset, 2b, 2c
 ssc_z_ts_combined_with_representative_rivers <- (((
   (ssc_z_ts_from_mining_onset_plot + 
      geom_text(data = n_sites_ssc_response, aes(x = -Inf, y = Inf, label = paste0('N=',N_rivers)),
@@ -990,11 +1031,11 @@ ssc_z_ts_combined_with_representative_rivers <- (((
   plot_annotation(tag_levels = list(c('a', '', 'b', 'c'))) &
   theme(plot.tag = element_text(face = 'bold')) 
 
-ggsave(ssc_z_ts_combined_with_representative_rivers, filename = paste0(wd_figures, 'ssc_z_ts_combined_with_representative_rivers.pdf'),
+ggsave(ssc_z_ts_combined_with_representative_rivers, filename = paste0(wd_figures, 'fig2_ssc_z_ts_combined_with_representative_rivers.pdf'),
        useDingbats = F, width = 5.5, height = 7.5)
-ggsave(ssc_z_ts_combined_with_representative_rivers, filename = paste0(wd_figures, 'ssc_z_ts_combined_with_representative_rivers.png'),
+ggsave(ssc_z_ts_combined_with_representative_rivers, filename = paste0(wd_figures, 'fig2_ssc_z_ts_combined_with_representative_rivers.png'),
        width = 5.5, height = 7.5)  
-#### PLOT Z-SCORE RASTER ####
+#### 11. PLOT Z-SCORE RASTER ####
 
 # Function to remove the label for the first of two facet columns
 # Only one axis is labeled with the facet
@@ -1003,6 +1044,7 @@ remove_first_faceter_labeller <- function(x){
   facet <- substr(x, loc, nchar(x))
   return(facet)
 }
+## Extended Data Fig. 1
 # Plot Z-score timeseries raster (wrt 1984-1991 reference)
 # plot colored by z-score
 ssc_zscore_timeseries_raster_plot <- ggplot(ssc_ma_annual_avg_zscore[!is.na(continent_country)], 
@@ -1042,13 +1084,14 @@ for(i in which(grepl("strip-l", ssc_zscore_timeseries_raster_plot$layout$name)))
   ssc_zscore_timeseries_raster_plot$grobs[[i]]$layout$clip <- "off"
 }
 
-ggsave(ssc_zscore_timeseries_raster_plot, filename = paste0(wd_figures, 'ssc_zscore_timeseries_raster_plot.pdf'),
+ggsave(ssc_zscore_timeseries_raster_plot, filename = paste0(wd_figures, 'figE1_ssc_zscore_timeseries_raster_plot.pdf'),
        width = 10, height = 12, useDingbats = F)
-ggsave(ssc_zscore_timeseries_raster_plot, filename = paste0(wd_figures, 'ssc_zscore_timeseries_raster_plot.png'),
+ggsave(ssc_zscore_timeseries_raster_plot, filename = paste0(wd_figures, 'figE1_ssc_zscore_timeseries_raster_plot.png'),
        width = 10, height = 12)
 
 
 # Make plot showing river names to annotate Z-Score plot
+# (Not used in paper)
 ssc_zscore_timeseries_label_plot <- ggplot(ssc_ma_annual_avg_zscore[!is.na(continent_country) & year == 2020][
   transect_name_display, on = 'site_no'], 
                                             aes(x = 1, y = paste0(continent_display, country_display,site_no))) + 
@@ -1088,12 +1131,8 @@ ggsave(ssc_zscore_timeseries_label_plot, filename = paste0(wd_figures, 'ssc_zsco
 ggsave(ssc_zscore_timeseries_label_plot, filename = paste0(wd_figures, 'ssc_zscore_timeseries_label_plot.png'),
        width = 10, height = 12)
 
-# TO DO: Make more sophisticated join based on river km
-# TO DO: compute Z-score only for most-affected X kms
-# Could complicate things for rivers with long transects
-# Also, some sites have no good reference. Create custom reference for them? (Nearby rivers, "lowest" period)
 
-#### ANALYSIS OF NATIONAL, CONTINENTAL, AND GLOBAL TRENDS ####
+#### 12A. ANALYSIS OF NATIONAL, CONTINENTAL, AND GLOBAL TRENDS ####
 # Initialize some plot elements
 financial_crisis_timeline <- data.table(x = c(2008, 2010),
                                         y = c(-Inf, -Inf),
@@ -1104,6 +1143,8 @@ covid_timeline <- data.table(x = c(2020, 2022),
 
 financial_crisis_label <- data.table(x = 2008, y = -Inf, label = c('Global Financial\nCrisis (2008-09)'))
 covid_label <- data.table(x = 2020, y = -Inf, label = c('COVID-19\n(2020-22)'))
+
+## Fig. S17b
 # Analysis of Z-score aggregate 
 # Global
 transect_ts_zscore_ma_plot <- ggplot(ssc_ma_annual_full_transect_avg[
@@ -1122,6 +1163,7 @@ transect_ts_zscore_ma_plot <- ggplot(ssc_ma_annual_full_transect_avg[
   ) + 
   theme(axis.title.y = element_markdown())
 
+## Fig. S17b inset
 # By continent
 sites_per_continent <- ssc_ma_annual_full_transect_avg[Continent != 'North America' & abs(SSC_z_score) < 50][
   ,.(N_sites = uniqueN(site_no)), by = .(continent_display)
@@ -1131,6 +1173,7 @@ transect_ts_zscore_ma_continent_plot <- transect_ts_zscore_ma_plot +
             hjust = 0, vjust = 0, size = 2.5) +
   facet_wrap(.~continent_display)
 
+## Fig. S18
 # By country
 sites_per_country <- ssc_ma_annual_full_transect_avg[abs(SSC_z_score) < 50][
   ,.(N_sites = uniqueN(site_no)), by = .(country_display)
@@ -1143,20 +1186,21 @@ transect_ts_zscore_ma_country_plot <- transect_ts_zscore_ma_plot +
   facet_wrap(.~country_display, scales = 'free_y')
 
 ggsave(transect_ts_zscore_ma_country_plot, 
-       filename = paste0(wd_figures, 'transect_ts_zscore_ma_country_plot.png'),
+       filename = paste0(wd_figures, 'figS18_transect_ts_zscore_ma_country_plot.png'),
        width = 9, height = 9)
 ggsave(transect_ts_zscore_ma_country_plot, 
-       filename = paste0(wd_figures, 'transect_ts_zscore_ma_country_plot.pdf'),
+       filename = paste0(wd_figures, 'figS18_transect_ts_zscore_ma_country_plot.pdf'),
        width = 9, height = 9, useDingbats = F)
 
-ggsave(transect_ts_zscore_ma_inset_plot, 
-       filename = paste0(wd_figures, 'transect_ts_zscore_ma_inset_plot.png'),
-       width = 7, height = 7)
-ggsave(transect_ts_zscore_ma_inset_plot, 
-       filename = paste0(wd_figures, 'transect_ts_zscore_ma_inset_plot.pdf'),
-       width = 7, height = 7, useDingbats = F)
+# ggsave(transect_ts_zscore_ma_inset_plot, 
+#        filename = paste0(wd_figures, 'transect_ts_zscore_ma_inset_plot.png'),
+#        width = 7, height = 7)
+# ggsave(transect_ts_zscore_ma_inset_plot, 
+#        filename = paste0(wd_figures, 'transect_ts_zscore_ma_inset_plot.pdf'),
+#        width = 7, height = 7, useDingbats = F)
 
-#### COMPARE SSC TO THE PRICE OF GOLD ####
+#### 12B. COMPARE SSC TO THE PRICE OF GOLD ####
+## Fig. S17a
 # Plot the price of gold for same period as SSC
 gold_price_ts_plot <- ggplot(gold_prices, 
                              aes(x = year, y = USD)) +
@@ -1176,6 +1220,7 @@ gold_price_ts_plot <- ggplot(gold_prices,
     y = 'Gold Price (USD)'
   )
 
+## Fig. S17
 # Combine SSC avg. and gold price plots
 SSC_gold_price_comb_ts_plot <- 
   # On top: Gold Price Plot
@@ -1207,13 +1252,13 @@ SSC_gold_price_comb_ts_plot <-
   theme(plot.tag = element_text(face = 'bold'))
 
 ggsave(SSC_gold_price_comb_ts_plot, 
-       filename = paste0(wd_figures, 'SSC_gold_price_comb_ts_plot.png'),
+       filename = paste0(wd_figures, 'figS17_SSC_gold_price_comb_ts_plot.png'),
        width = 6, height = 6.5)
 ggsave(SSC_gold_price_comb_ts_plot, 
-       filename = paste0(wd_figures, 'SSC_gold_price_comb_ts_plot.pdf'),
+       filename = paste0(wd_figures, 'figS17_SSC_gold_price_comb_ts_plot.pdf'),
        width = 6, height = 6.5, useDingbats = F)
 
-#### SSC TIMESERIES CORRELATIONS ####
+#### 12C. SSC TIMESERIES CORRELATIONS ####
 ssc_annual_avg <- ssc_ma_annual_full_transect_avg[Continent != 'North America' & abs(SSC_z_score) < 50][
   ,.(SSC_z_score = median(SSC_z_score, na.rm = T)),
   by = .(year)
@@ -1231,7 +1276,7 @@ spearman_test <- cor.test(gold_prices_annual[year %in% 1986:2021]$USD,ssc_annual
                           method = c('spearman'))
 
 
-#### RIVER KILOMETERS AFFECTED BY MINING ####
+#### 13. RIVER KILOMETERS AFFECTED BY MINING ####
 # Add decade to SSC data.table
 ssc_ma_annual_full_transect_avg <- ssc_ma_annual_full_transect_avg[
   ,':='(decade = year - year%%10,
@@ -1307,7 +1352,7 @@ print(paste0('total river km elevated SSC: ', sum(river_reaches_elevated_2020$km
 river_reaches_elevated_2020 <- river_reaches_elevated_2020[transect_name_display, on = 'site_no']
 
 # Write 2020 elevated river km per transect to file
-fwrite(river_reaches_elevated_2020, file = 'river_reaches_elevated_2020.csv')
+fwrite(river_reaches_elevated_2020, file = paste0(wd_imports,'river_reaches_elevated_2020.csv'))
 
 # Combine tables of km elevated by different amounts into single table
 river_reaches_Nx_decadal <- rbind(river_reaches_2x_decadal, river_reaches_5x_decadal, river_reaches_10x_decadal,
@@ -1346,44 +1391,7 @@ river_reaches_Nx_decadal_continent_summary <- dcast.data.table(
       river_length_by_decade_summary, on = 'continent_display'
     ][order(continent_display)]
 
-fwrite(river_reaches_Nx_decadal_continent_summary, file = paste0(wd_exports, 'river_reaches_Nx_decadal_continent_summary.csv'))
-
-# Plot river kilometers elevated timeseries overall
-river_km_elevated_Nx_plot <- ggplot(river_reaches_Nx_decadal[!is.na(km_Nx) & continent_display != 'N. Am.'], aes(x = half_decade, y = km_Nx, color = Nx)) +
-  stat_summary(geom = 'line', fun = 'sum', lwd = 0.75) + 
-  season_facet +
-  scale_color_manual(values = c('2x' = 'black', '5x' = '#735A10', '10x' = '#F2BE22')) +
-  scale_y_continuous(label=comma, limits = c(0, NA)) +
-  theme(legend.position = 'top',
-        axis.title.x = element_blank()) +
-  # facet_wrap(.~country_display) +
-  labs(
-    x = '',
-    y = '**Mining-affected river kilometers**',
-    color = 'Nx'
-  ) + 
-  theme(axis.title.y = element_markdown())
-# Plot river kilometers elevated timeseries by continent
-river_km_elevated_Nx_continent_plot <- river_km_elevated_Nx_plot +
-  facet_wrap(.~continent_display) +
-  scale_x_continuous(limits = c(1990, NA), breaks = c(1990, 2000, 2010, 2020), 
-                     labels = c("'90", "'00", "'10", "'20")) # shorten decade label
-
-# Combine annual continent-specific and general plots of elevated river kilometers
-river_km_elevated_Nx_combined_plot <- 
-  river_km_elevated_Nx_plot + 
-  river_km_elevated_Nx_continent_plot +
-  plot_layout(guides = "collect") +
-  plot_annotation(tag_levels = 'a') &
-  theme(plot.tag = element_text(face = 'bold'),
-        legend.position = 'bottom',
-        legend.title = element_text(face = 'bold', size = 16),
-        legend.text = element_text(size = 14))
-
-ggsave(river_km_elevated_Nx_combined_plot, filename = paste0(wd_figures, 'river_km_elevated_Nx_plot.pdf'),
-       width = 7, height = 5, useDingbats = F)
-ggsave(river_km_elevated_Nx_combined_plot, filename = paste0(wd_figures, 'river_km_elevated_Nx_plot.png'),
-       width = 7, height = 5)
+fwrite(river_reaches_Nx_decadal_continent_summary, file = paste0(wd_imports, 'river_reaches_Nx_decadal_continent_summary.csv'))
 
 
 # Rivers with at least one 10 km reach that is always + 3SD 
@@ -1415,7 +1423,7 @@ reach_length_elevated_summary <- n_reaches_elevated_by_river[
      sd_river_km_3SD_elevated_percent = sd(river_km_3SD_elevated_percent, na.rm = T)
   ),
   by = .(half_decade)]
-
+## Extended Data Fig. 3b
 percent_reaches_elevated_3SD_plot <- ggplot(n_reaches_elevated_by_river, 
                                             aes(x = half_decade, y = river_km_3SD_elevated_percent)) + 
   stat_summary(geom = 'line', fun = 'mean', lty = 'dashed') +
@@ -1426,6 +1434,7 @@ percent_reaches_elevated_3SD_plot <- ggplot(n_reaches_elevated_by_river,
     y = '**% Mining-affected river reaches**<br>*(> 3 SD over pre-mining)*'
   ) +
   theme(axis.title.y = element_markdown())
+## Extended Data Fig. 3a
 avg_km_elevated_3SD_plot <- ggplot(n_reaches_elevated_by_river, 
                                    aes(x = half_decade, y = river_km_3SD_elevated)) + 
   stat_summary(geom = 'line', fun = 'mean', lty = 'dashed') +
@@ -1437,16 +1446,15 @@ avg_km_elevated_3SD_plot <- ggplot(n_reaches_elevated_by_river,
   ) +
   theme(axis.title.y = element_markdown())
 
-
+## Extended Data Fig. 3
 elevated_reaches_summary_plot_combined <- avg_km_elevated_3SD_plot / percent_reaches_elevated_3SD_plot +
   plot_annotation(tag_levels = 'a') &
   theme(plot.tag = element_text(face = 'bold'))
 
-ggsave(elevated_reaches_summary_plot_combined, filename = paste0(wd_figures, 'elevated_reaches_summary_plot_combined.pdf'),
+ggsave(elevated_reaches_summary_plot_combined, filename = paste0(wd_figures, 'figE3_elevated_reaches_summary_plot_combined.pdf'),
        useDingbats = F, width = 4, height = 6)
-ggsave(elevated_reaches_summary_plot_combined, filename = paste0(wd_figures, 'elevated_reaches_summary_plot_combined.png'),
+ggsave(elevated_reaches_summary_plot_combined, filename = paste0(wd_figures, 'figE3_elevated_reaches_summary_plot_combined.png'),
        width = 4, height = 6)
-
 
 # Summarize annual elevated river kilometers by country and continent
 ssc_river_km_elevated_annual <- ssc_ma_annual_full_transect_avg[
@@ -1454,6 +1462,7 @@ ssc_river_km_elevated_annual <- ssc_ma_annual_full_transect_avg[
      km_3SD = sum(km_3SD, na.rm = T) * 10), 
   by = .(year, country_display, continent_display)]
 
+## Fig. 3b
 # Plot annual elevated river kilometers by continent
 river_km_elevated_continent_plot <- ggplot(ssc_river_km_elevated_annual[continent_display != 'N. Am.'], 
                                            aes(x = year, y = km_elevated)) +
@@ -1473,6 +1482,7 @@ river_km_elevated_continent_plot <- ggplot(ssc_river_km_elevated_annual[continen
     color = 'SSC change'
   )
 
+## Fig. 3a
 # Plot annual elevated river kilometers
 river_km_elevated_plot <- ggplot(ssc_river_km_elevated_annual, aes(x = year, y = km_elevated)) +
   stat_summary(aes(color = '> Reference'), geom = 'line', fun = 'sum', lwd = 1) +
@@ -1500,17 +1510,13 @@ river_km_elevated_combined_plot <-
         legend.title = element_text(face = 'bold', size = 16),
         legend.text = element_text(size = 14))
 
-ggsave(river_km_elevated_combined_plot, filename = paste0(wd_figures, 'river_km_elevated_plot.pdf'),
-       width = 7, height = 5, useDingbats = F)
-ggsave(river_km_elevated_combined_plot, filename = paste0(wd_figures, 'river_km_elevated_plot.png'),
-       width = 7, height = 5)
-
 # Focus on longest rivers in dataset
 ssc_ma_annual_transects_500km <- ssc_ma_annual_full_transect_avg[site_no %chin% transects_500km$site_no &
                                                                    ref_reach == site_no]
 ssc_ma_annual_transects_500km_summary <- ssc_ma_annual_transects_500km[,.(SSC_z_score = median(SSC_z_score, na.rm = T)),
                                                                        by = .(continent_display, country_display, site_no, 
                                                                               distance_10km-distance_10km%%50, decade, reference)]
+# (Not used in paper)
 ssc_ma_annual_transects_500km_plot <- 
   # ggplot(ssc_ma_annual_transects_500km_summary[reference != 'Reference' & !is.na(SSC_z_score)],
   ggplot(ssc_ma_annual_transects_500km_summary[!is.na(SSC_z_score)],
@@ -1537,6 +1543,7 @@ select_500km_rivers <- c('cameroon_kadei_river_agm_region', 'drc_lindi_river_agm
                          'mongolia_zamaar_goldfield', 'myanmar_chindwin_gold_lower', 'brazil_luar_da_praia_agm_region')
 
 select_500km_rivers_display_names <- c('Kadei R.', 'Lindi R.', 'Aruwimi R.', 'Orhon R.', 'Chindwin R.', 'Iriri R.')
+## Fig. 3c
 ssc_ma_annual_transects_select_500km_plot <- 
   # ggplot(ssc_ma_annual_transects_500km_summary[reference != 'Reference' & !is.na(SSC_z_score)],
   ggplot(ssc_ma_annual_transects_500km_summary[!is.na(SSC_z_score) & site_no %chin% select_500km_rivers],
@@ -1559,11 +1566,8 @@ ssc_ma_annual_transects_select_500km_plot <-
   theme(axis.title.y = element_markdown(),
         legend.position = 'top')
 
-ggsave(ssc_ma_annual_transects_select_500km_plot, filename = paste0(wd_figures, 'ssc_ma_annual_transects_select_500km_plot.pdf'),
-       useDingbats = F, width = 7, height = 4)
-ggsave(ssc_ma_annual_transects_select_500km_plot, filename = paste0(wd_figures, 'ssc_ma_annual_transects_select_500km_plot.png'),
-       width = 7, height = 4)
-
+# Fig 3
+# Combined Fig. 3a, 3b, 3c
 # Make figure with total river kilometers affected and selected long rivers
 combined_river_elevated_long_rivers_plot <- 
   river_km_elevated_combined_plot / (ssc_ma_annual_transects_select_500km_plot &
@@ -1576,66 +1580,98 @@ combined_river_elevated_long_rivers_plot <-
         legend.title = element_text(face = 'bold', size = 16),
         legend.text = element_text(size = 14))
 
-ggsave(combined_river_elevated_long_rivers_plot, filename = paste0(wd_figures, 'combined_river_elevated_long_rivers_plot.pdf'),
+ggsave(combined_river_elevated_long_rivers_plot, filename = paste0(wd_figures, 'fig3_combined_river_elevated_long_rivers_plot.pdf'),
        useDingbats = F, width = 7, height = 8)
-ggsave(combined_river_elevated_long_rivers_plot, filename = paste0(wd_figures, 'combined_river_elevated_long_rivers_plot.png'),
+ggsave(combined_river_elevated_long_rivers_plot, filename = paste0(wd_figures, 'fig3_combined_river_elevated_long_rivers_plot.png'),
        width = 7, height = 8)
-
-#### PLOT MONTHLY AVERAGES FOR SELECT RIVERS ####
-# Transect data for only selected 500 km rivers
-ssc_transects_500km_color <- ssc_ma_annual_transects_500km[,.(site_no, distance_10km, year, half_decade, decade, reference)][
-  asgm_river_landsat_pred[site_no %chin% select_500km_rivers & num_pix > 100][
-    ,.(site_no, SSC_mgL, B1, B2, B3, B6, distance_10km, month, year)],
-  on = c('site_no', 'distance_10km', 'year')
+#### vvv WORKING HERE vvv ####
+#### 14. PLOT MONTHLY AVERAGES FOR SELECT RIVERS ####
+# Profile IDs for common naming convention
+profile_ids <- profile_metadata[
+  ,.(site_no = `Transect name`, `Transect id` = gsub('profile_', 'p', `Transect id`))
 ]
 
-ssc_transects_all_color <- ssc_ma_annual_transects_500km[,.(site_no, distance_10km, year, half_decade, decade, reference)][
-  asgm_river_landsat_pred[site_no %chin% select_500km_rivers & num_pix > 100][
-    ,.(site_no, SSC_mgL, B1, B2, B3, B6, distance_10km, month, year)],
-  on = c('site_no', 'distance_10km', 'year')
-]
+# Add profile IDs to moving average
+ssc_ma_annual_full_transect_avg <- merge(ssc_ma_annual_full_transect_avg, profile_ids, by = 'site_no', all.x = T)
 
-
-# All transect data
-ssc_transects_color <- ssc_ma_annual_full_transect_avg[
+# All daily transect data (get extra columns from moving average data)
+ssc_transects_daily <- ssc_ma_annual_full_transect_avg[
   # ref_reach == site_no][ 
-  ,.(site_no, distance_10km, year, half_decade, decade, reference, country_display, continent_display)][
+  ,.(site_no, `Transect id`, distance_10km, year, half_decade, decade, reference, country_display, continent_display)][
     asgm_river_landsat_pred[
       # num_pix > 35 & # if actually computing color
-        !is.na(SSC_mgL) & B6 > 2780 & SSC_mgL < 15000][
-      ,.(site_no, SSC_mgL, B1, B2, B3, B6, distance_10km, month, year)],
+      !is.na(SSC_mgL) & B6 > 2780 & SSC_mgL < 15000][
+        ,.(site_no, SSC_mgL, B1, B2, B3, B6, distance_10km, month, year)],
     on = c('site_no', 'distance_10km', 'year')
   ][transect_name_display, on = 'site_no']
 
-
-# Summarize color data by decade and month
-ssc_transects_500km_color_summary <- ssc_transects_500km_color[
-  distance_10km > 50 & distance_10km < 300 & !is.na(SSC_mgL) & B6 > 2780 & SSC_mgL < 15000
-][
-  ,.(SSC_mgL = mean(SSC_mgL, na.rm = T),
-     B3 = mean(B3, na.rm = T),
-     B2 = mean(B2, na.rm = T),
-     B1 = mean(B1, na.rm = T)
-  ),
-  by = .(site_no, month-month%%3, reference)
-][
-  ,':='(red = ifelse(B3 > 2000, 1, B3/2000),
-        green = ifelse(B2 > 2000, 1, B2/2000),
-        blue = ifelse(B1 > 2000, 1, B1/2000))
+# Find which profiles with no reference data (reference is only from other river)
+no_reference_rivers <- ssc_ma_annual_full_transect_avg[site_no != ref_reach][
+  ,.(reference_period_start = min(reference_period_start, na.rm = T),
+     reference_period_end = max(reference_period_end, na.rm = T)),
+  by = .(site_no, ref_reach, Country, Continent, mining_onset, 
+         SSC_mgL_reference, SSC_mgL_reference_sd, N_obs_ref,
+         reference_distance_start, reference_distance_end, country_display, continent_display,
+         continent_country,transect_display_name, `Transect id`)
 ]
 
-# Plot monthly mining vs. reference, selected 500 km sites
-ssc_monthly_vs_reference_example_plot <- ggplot(ssc_transects_500km_color, aes(x = month, y = SSC_mgL, fill = reference, color = reference, group = reference)) + 
-  stat_summary(geom = 'line', lty = 'dashed', fun = 'mean') +
-  stat_summary(pch = 21, stroke = 0.2, color = 'black', fun.data = mean_se) +
-  # stat_summary(pch = 21, stroke = 0.2, fill = NA, color = 'black') +
-  scale_fill_manual(values = c('Reference' = '#185359', 'Active mining' = '#F2BE22')) +
-  scale_color_manual(values = c('Reference' = '#185359', 'Active mining' = '#F2BE22')) +
-  season_facet + 
-  facet_wrap(.~site_no)
+# Create table of daily SSC at reference-only rivers
+reference_river_fill_data_daily <- merge(
+  reference_river_data_daily[site_no %chin% unique(no_reference_rivers$ref_reach)][
+    ,':='(ref_reach = site_no, site_no = NULL)
+  ],
+  no_reference_rivers[,.(site_no, ref_reach,country_display, continent_display, continent_country, transect_display_name,`Transect id`)], 
+  by = 'ref_reach', 
+  allow.cartesian=TRUE)[,':='(
+  reference = 'Reference')]
+
+# Combine daily records for rivers with reference data 
+# and 
+# reference data for rivers with no reference
+common_columns <- colnames(ssc_transects_daily)[colnames(ssc_transects_daily) %chin% colnames(reference_river_fill_data_daily)]
+ssc_transects_daily <- rbind(ssc_transects_daily,
+                             reference_river_fill_data_daily[,..common_columns],
+                             use.names = T, fill = T)
+
+# Summarize daily records of reference and active mining SSC by month
+ssc_transects_daily_summary <- ssc_transects_daily[,.(
+  SSC_mgL = mean(SSC_mgL, na.rm = T),
+  SSC_mgL_se = sqrt(sd(SSC_mgL, na.rm =  T)^2 + 0.71^2)/sqrt(uniqueN(year, na.rm = T)),
+  N_months = uniqueN(year)
+),
+by = .(site_no, `Transect id`, country_display, continent_display, transect_display_name, month, reference)]
+
+# Repeat for moving-average data
+# For rivers with only external reference, create moving-average reference record
+
+
+
+reference_river_fill_data_ma <- merge(
+  ssc_ma_annual_avg_full[site_no %chin% unique(no_reference_rivers$ref_reach)][
+    ,':='(ref_reach = site_no, site_no = NULL)
+  ],
+  no_reference_rivers[,.(site_no, ref_reach,country_display, continent_display, continent_country, 
+                         transect_display_name,`Transect id`, SSC_mgL_reference, SSC_mgL_reference_sd,
+                         N_obs_ref,reference_period_start,reference_period_end,reference_distance_start,
+                         reference_distance_end)], 
+  by = 'ref_reach', 
+  allow.cartesian=TRUE)[,':='(
+    reference = 'Reference',
+    reference_river = 'Reference river',
+    pre_post_mining = 'Pre-mining')]
+
+# Combine daily records for rivers with reference data 
+# and 
+# reference data for rivers with no reference
+common_columns_ma <- colnames(ssc_ma_annual_full_transect_avg)[
+                          colnames(ssc_ma_annual_full_transect_avg) %chin% 
+                            colnames(reference_river_fill_data_ma)]
+ssc_ma_annual_full_transect_avg <- rbind(ssc_ma_annual_full_transect_avg,
+                             reference_river_fill_data_ma[,..common_columns_ma],
+                             use.names = T, fill = T)
 
 # Plot monthly mining vs. reference, all sites
-continents_all <- unique(ssc_transects_color$continent_display)
+continents_all <- unique(ssc_transects_daily$continent_display)
 # Each continent, with S.America and Africa each twice
 continents_all <- c(continents_all[which(!is.na(continents_all))], 'S. Am.', 'Africa')
 
@@ -1643,6 +1679,10 @@ early_alphabet_SA_countries <- c('Bolivia', 'Brazil','Colombia')
 early_alphabet_Africa_countries <- c('Angola', 'C. African Republic', 'Cameroon', "Cote d'Ivoire", 'Dem. Rep. Congo')
 
 #### PLOT AVERAGE MONTHLY SSC, BEFORE AND DURING MINING AND HISTOGRAMS OF REFERENCE VS. ACTIVE MINING ####
+# Labels for saving plots
+extended_fig_labels <- paste0('E', c(4,6,'7A','7B',8,9,5))
+supplemental_fig_labels_2 <- paste0('S', c(11,13,'14A','14B',15,16,12))
+
 for(i in 1:7){
   if(i == 1){
     j <- 1
@@ -1651,10 +1691,13 @@ for(i in 1:7){
   continent_sel <- continents_all[i]
   continent_write_name <- gsub('\\.| ', '', continent_sel)
   # Filter data.table to just selected continent
-  dt_sel <- ssc_transects_color[continent_display == continent_sel]
+  dt_sel <- ssc_transects_daily[continent_display == continent_sel]
   # Selected transects for this run
   dt_transects <- unique(dt_sel$transect_display_name)
   dt_ma_sel <- ssc_ma_annual_full_transect_avg[continent_display == continent_sel]
+  
+  print(continent_write_name)
+  
   # Split South America into two
   if(continent_write_name == 'SAm'){
     if(j == 1){
@@ -1678,19 +1721,26 @@ for(i in 1:7){
       # dt_annual_avg_SSC <- dt_annual_avg_SSC[!(country_display %chin% early_alphabet_Africa_countries)]
       continent_write_name <- paste0(continent_write_name, '_1')} 
   }
+
+  transect_names <- unique(dt_sel$site_no)
+  extended_fig_label_sel <- extended_fig_labels[i]
+  supplemental_fig_labels_2_sel <- supplemental_fig_labels_2[i]
   
+  ssc_transects_daily_summary_sel <- ssc_transects_daily_summary[site_no %chin% transect_names]
   # Plot average monthly SSC for each transect: 2 categories -- reference and active mining
   monthly_ssc_mining_vs_reference_plot <- 
     ggplot(dt_sel, aes(x = factor(month), y = SSC_mgL, fill = reference, 
                        group = reference,
                        color = reference)) + 
+    geom_linerange(data = ssc_transects_daily_summary_sel,
+                   aes(ymin = SSC_mgL - SSC_mgL_se, ymax = SSC_mgL + SSC_mgL_se), color = 'black') +
     stat_summary(geom = 'line', lty = 'dashed', fun = 'mean') +
-    stat_summary(pch = 21, stroke = 0.2, color = 'black', fun.data = mean_se) +
+    stat_summary(pch = 21, stroke = 0.2, color = 'black', fun = 'mean') +
     scale_fill_manual(values = c('Reference' = '#185359', 'Active mining' = '#F2BE22')) +
     scale_color_manual(values = c('Reference' = '#185359', 'Active mining' = '#F2BE22')) +
     scale_x_discrete(breaks = c(1, 4, 7, 10), labels = c('Jan', 'Apr', 'Jul', 'Oct')) +
     season_facet + 
-    facet_wrap(.~paste0(country_display, '\n', transect_display_name), scales = 'free_y', ncol = 5) +
+    facet_wrap(.~paste0(country_display, '\n', transect_display_name, '\n', `Transect id`), scales = 'free_y', ncol = 5) +
     labs(
       x = 'Month',
       y = 'SSC (mg/L)',
@@ -1699,15 +1749,16 @@ for(i in 1:7){
     ) +
     theme(axis.title.y = element_markdown(),
           legend.position = 'top',
-          axis.text.x = element_text(angle = 90, vjust = 0.5))
+          axis.text.x = element_text(angle = 90, vjust = 0.5),
+          strip.clip = 'off')
   
   # Set panel size to keep panels the same size across different pages (each page is a major landmass)
   monthly_ssc_mining_vs_reference_plot <- set_panel_size(monthly_ssc_mining_vs_reference_plot, width  = unit(1.15, "in"),
                                                          height = unit(1.15, "in"))
   
-  ggsave(monthly_ssc_mining_vs_reference_plot, filename = paste0(wd_figures, continent_write_name, '_monthly_ssc_mining_vs_reference_plot.pdf'),
+  ggsave(monthly_ssc_mining_vs_reference_plot, filename = paste0(wd_figures, 'fig', extended_fig_label_sel, '_', continent_write_name, '_monthly_ssc_mining_vs_reference_plot.pdf'),
          width = 9, height = 13, useDingbats = F)
-  ggsave(monthly_ssc_mining_vs_reference_plot, filename = paste0(wd_figures, continent_write_name, '_monthly_ssc_mining_vs_reference_plot.png'),
+  ggsave(monthly_ssc_mining_vs_reference_plot, filename = paste0(wd_figures, 'fig', extended_fig_label_sel, '_', continent_write_name, '_monthly_ssc_mining_vs_reference_plot.png'),
          width = 9, height = 13)
   
   # compute annual average SSC for each transect
@@ -1715,7 +1766,7 @@ for(i in 1:7){
     ,.(SSC_mgL = mean(SSC_mgL_3yr, na.rm = T),
        SSC_mgL_sd = sd(SSC_mgL_3yr, na.rm = T),
        N_obs = .N),
-    by = .(site_no, country_display, transect_display_name, continent_display, reference)
+    by = .(site_no, `Transect id`, country_display, transect_display_name, continent_display, reference)
   ]
   
   # Test for distribution normality
@@ -1760,7 +1811,7 @@ for(i in 1:7){
     #                color = 'black', lwd = 0.5, alpha = 0.6) +
     geom_hline(data = dt_annual_avg_SSC, aes(yintercept = SSC_mgL, color = reference), lty = 'dashed') +
     season_facet + 
-    facet_wrap(.~paste0(country_display, '\n', transect_display_name), scales = 'free', ncol = 5) +
+    facet_wrap(.~paste0(country_display, '\n', transect_display_name, '\n', `Transect id`), scales = 'free', ncol = 5) +
     scale_fill_manual(values = c('Active mining' = '#F2BE22', 'Reference' = '#185359')) +
     scale_color_manual(values = c('Active mining' = '#F2BE22', 'Reference' = '#185359')) +
     theme(
@@ -1774,15 +1825,16 @@ for(i in 1:7){
     ) +
     theme(axis.title.y = element_markdown(),
           legend.position = 'top',
-          axis.text.x = element_text(angle = 90, vjust = 0.5))
+          axis.text.x = element_text(angle = 90, vjust = 0.5),
+          strip.clip = 'off')
   
   # Set panel size to keep panels the same size across different pages (each page is a major landmass)
   monthly_ssc_distribution_vs_reference_plot <- set_panel_size(monthly_ssc_distribution_vs_reference_plot, width  = unit(0.85, "in"),
                                                          height = unit(0.85, "in"))
-  
-  ggsave(monthly_ssc_distribution_vs_reference_plot, filename = paste0(wd_figures, continent_write_name, '_monthly_ssc_distribution_vs_reference_plot.pdf'),
+
+  ggsave(monthly_ssc_distribution_vs_reference_plot, filename = paste0(wd_figures, 'fig', supplemental_fig_labels_2_sel, '_', continent_write_name, '_monthly_ssc_distribution_vs_reference_plot.pdf'),
          width = 9, height = 13, useDingbats = F)
-  ggsave(monthly_ssc_distribution_vs_reference_plot, filename = paste0(wd_figures, continent_write_name, '_monthly_ssc_distribution_vs_reference_plot.png'),
+  ggsave(monthly_ssc_distribution_vs_reference_plot, filename = paste0(wd_figures, 'fig', supplemental_fig_labels_2_sel, '_', continent_write_name, '_monthly_ssc_distribution_vs_reference_plot.png'),
          width = 9, height = 13)
 }
 
@@ -1827,7 +1879,7 @@ monthly_ssc_distribution_vs_reference_plot_example <- ggplot(ssc_ma_annual_full_
 
 #### FISH SUBLETHAL AND LETHAL EFFECTS MODEL ####
 # From Singleton, 1986 10% over background levels
-fish_lethality <- ssc_transects_color[
+fish_lethality <- ssc_transects_daily[
   ssc_ma_annual_full_transect_avg[,.(SSC_mgL_reference = mean(SSC_mgL_reference, na.rm = T), 
                                      SSC_mgL_reference_sd = mean(SSC_mgL_reference_sd, na.rm = T)), 
                                      by = .(site_no)],
@@ -1843,8 +1895,8 @@ fish_sublethal_90percent <- nrow(fish_lethality_summary[ssc_10p_exceed_time_frac
 fish_sublethal_50percent <- nrow(fish_lethality_summary[ssc_10p_exceed_time_fraction > 0.5])
 
 #### CALCULATE AND PLOT MONTHLY NUMBER OF IMAGES FOR MINING AND REFERENCE PERIODS ####
-ssc_transects_color_test <- ssc_transects_color[site_no == 'ghana_pra_dn']
-ssc_transects_monthly_consistency <- ssc_transects_color[
+ssc_transects_daily_test <- ssc_transects_daily[site_no == 'ghana_pra_dn']
+ssc_transects_monthly_consistency <- ssc_transects_daily[
   ,':='(n_images = .N,
         length_km = max(distance_10km, na.rm = T)-min(distance_10km, na.rm = T)), by = .(site_no, transect_display_name, reference)][
           ,':='(samples_per_10km_segment = n_images/length_km*10)]
@@ -1865,6 +1917,9 @@ if(length(continent_monthly_consistency) == 5){
 }else if(length(continent_monthly_consistency) == 6){
   continent_monthly_consistency <- c(continent_monthly_consistency, 'Africa')
 }
+
+# Labels for saving plots
+supplemental_fig_labels_1 <- paste0('S', c(3,5,'6A','6B',7,8,4))
 
 for(i in 1:7){
   if(i == 1){
@@ -1895,6 +1950,8 @@ for(i in 1:7){
       continent_write_name <- paste0(continent_write_name, '_1')} 
   }
   
+  supplemental_fig_labels_1_sel <- supplemental_fig_labels_1[i]
+  
   continent_monthly_consistency_sel <- continent_monthly_consistency[i]
   # Plot fraction of images for each month in reference and Active mining datasets
   monthly_consistency_plot <- ggplot(dt_sel, 
@@ -1921,10 +1978,10 @@ for(i in 1:7){
                                              height = unit(0.24, "in"))
   
   ggsave(monthly_consistency_plot, 
-         filename = paste0(wd_figures, 'monthly_consistency_', continent_write_name, '.pdf'),
+         filename = paste0(wd_figures, 'fig', supplemental_fig_labels_2_sel, '_monthly_consistency_', continent_write_name, '.pdf'),
          useDingbats = F, width = 7, height = 13)
   ggsave(monthly_consistency_plot, 
-         filename = paste0(wd_figures, 'monthly_consistency_', continent_write_name, '.png'),
+         filename = paste0(wd_figures, 'fig', supplemental_fig_labels_2_sel, '_monthly_consistency_', continent_write_name, '.png'),
          width = 7, height = 13)
   
 }
