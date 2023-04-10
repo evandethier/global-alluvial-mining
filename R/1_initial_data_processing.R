@@ -23,6 +23,9 @@ library(readxl)
 library(patchwork)
 library(egg)
 
+library(tidyr)
+library(broom)
+
 #### ii. THEMES ####
 theme_evan <- theme_bw() +
   theme(
@@ -129,11 +132,16 @@ asgm_river_import <- rbindlist(
     fread),
   use.names = T, fill = T)[,':='(.geo = NULL)]
 
-# Function to calculate distance along transect
+# Fix typos in profile names
+asgm_river_import <- asgm_river_import[,':='(name = gsub('yrgystan', 'yrgyzstan', name))]
+asgm_river_import <- asgm_river_import[,':='(name = gsub('hillipin', 'hilippin', name))]
+
+
+# Function to calculate distance along profile
 # Uses final extension of ID string (after the last underscore)
 getDistance <- function(x){return(as.numeric(strsplit(x, '_')[[1]][6]))}
 
-# Function to get country from name of transect. 
+# Function to get country from name of profile. 
 # Will replace this with master metadata table
 getCountry <- function(x){return(strsplit(x, '_')[[1]][1])}
 
@@ -335,7 +343,7 @@ fwrite(asgm_river_landsat_pred, paste0(wd_imports,'asgm_river_landsat_pred.csv')
 
 
 #### FILL GAPS IN TIMESERIES WITH MOVING AVERAGE CALCULATIONS ####
-#### REDUCE TRANSECT DATA BY YEAR, DISTANCE ####
+#### REDUCE PROFILE DATA BY YEAR, DISTANCE ####
 # Other sites need to be treated differently
 # First, calculate SSC mean and SD for each year
 ssc_avg_timeseries <- asgm_river_landsat_pred[SSC_mgL < 15000][
@@ -355,16 +363,16 @@ n_years <- max_year - min_year + 1
 
 max_dist <- max(asgm_river_landsat_pred$distance_10km, na.rm = T)/10 + 1
 
-n_transects <- length(unique(asgm_river_landsat_pred$site_no))
+n_profiles <- length(unique(asgm_river_landsat_pred$site_no))
 
-months_all <- rep(sort(rep(c(1:12), max_dist)), n_transects*n_years)
-years_all <- rep(sort(rep(c(min_year:max_year), 12 * max_dist)), n_transects)
+months_all <- rep(sort(rep(c(1:12), max_dist)), n_profiles*n_years)
+years_all <- rep(sort(rep(c(min_year:max_year), 12 * max_dist)), n_profiles)
 
 site_nos_all <- sort(rep(unique(asgm_river_landsat_pred$site_no), 12 * max_dist * n_years))
 
-distances_all <- rep(c(0:(max_dist-1)), 12 * n_years * n_transects) * 10
+distances_all <- rep(c(0:(max_dist-1)), 12 * n_years * n_profiles) * 10
 
-# Blank table of every possible transect, distance, year, month combination
+# Blank table of every possible profile, distance, year, month combination
 ssc_matrix <- data.table(site_no = site_nos_all, distance_10km = distances_all, 
                          year = years_all, month = months_all)[
                            ,':='(id = paste0(substr(site_no, 0, 3), '_', year, '_', month, '_', distance_10km))
@@ -383,7 +391,7 @@ getN <- function(x){
   return(x_N)
 }
 
-# Calculate 3-yr rolling mean, SD, and N observations for each transect + distance combination
+# Calculate 3-yr rolling mean, SD, and N observations for each profile + distance combination
 # (n = 36 months in 3-year period)
 ssc_ma_timeseries <- ssc_avg_timeseries_reg[order(year + month/12)
                                             ,':='(SSC_mgL_3yr = frollmean(SSC_mgL, n = 36, fill = NA, na.rm = T),

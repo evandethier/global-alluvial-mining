@@ -1,38 +1,162 @@
-#### IMPORT SSC DATA FROM OIL PALM REGIONS ####
+#### i. LIBRARY IMPORTS ####
+library(data.table)
+
+library(ggplot2)
+library(maps)
+library(scales)
+library(ggthemes)
+library(ggpubr)
+library(gstat)
+library(markdown)
+library(ggtext)
+
+library(lubridate)
+library(dataRetrieval)
+library(maps)
+library(glmnet)
+library(rgdal)
+library(Hmisc)
+library(zoo)
+
+library(readxl)
+library(patchwork)
+library(egg)
+
 library(tidyr)
 library(broom)
-kampar_trib = fread("ssc_ma_timeseries_indonesia_kampar_trib.csv")[distance_10km < 130 & year < 2015]
-batang_hari_trib2 = fread("ssc_ma_timeseries_indonesia_batang_hari_trib2.csv")[distance_10km == 60]
-batang_hari_bedaro = fread("ssc_ma_timeseries_indonesia_batang_hari_bedaro_agm_region.csv")
-batang_hari = fread("ssc_ma_timeseries_indonesia_batang_hari.csv")[distance_10km - distance_10km%%100 == 600]
-indonesia_west_kalimantan_monggo = fread("ssc_ma_timeseries_indonesia_west_kalimantan_monggo_agm_region.csv")
-indonesia_kapuas_trib = fread("ssc_ma_timeseries_indonesia_kapuas_trib.csv")
-indonesia_kahayan = fread("ssc_ma_timeseries_indonesia_kahayan.csv")
-indonesia_nabire_barat = fread("ssc_ma_timeseries_indonesia_nabire_barat.csv")
-ghana_pra_dn = fread("ssc_ma_timeseries_ghana_pra_dn.csv")
-ghana_pra_up = fread("ssc_ma_timeseries_ghana_pra_up.csv")
-indonesia_batang_asai_upper_agm_region = fread("ssc_ma_timeseries_indonesia_batang_asai_upper_agm_region.csv")
-indonesia_south_sumatra_soetangegoh_agm_region = fread("ssc_ma_timeseries_indonesia_south_sumatra_soetangegoh_agm_region.csv")[distance_10km < 150]
-indonesia_lampung_agm_region = fread("ssc_ma_timeseries_indonesia_lampung_agm_region.csv")
-liberia_cavalla_river_agm_region = fread("ssc_ma_timeseries_liberia_cavalla_river_agm_region.csv")[distance_10km < 240]
-indonesia_maura_soma_agm_region = fread("ssc_ma_timeseries_indonesia_maura_soma_agm_region.csv")
 
-palm_oil_ssc_ma_timeseries <- rbind(kampar_trib, batang_hari_trib2, batang_hari_bedaro, batang_hari, 
-      indonesia_west_kalimantan_monggo, indonesia_kapuas_trib, indonesia_kahayan, indonesia_south_sumatra_soetangegoh_agm_region,
-      indonesia_nabire_barat, ghana_pra_dn, ghana_pra_up, indonesia_batang_asai_upper_agm_region,
-      indonesia_lampung_agm_region, liberia_cavalla_river_agm_region, indonesia_maura_soma_agm_region)
 
+#### ii. THEMES ####
+theme_evan <- theme_bw() +
+  theme(
+    panel.grid.minor = element_blank(),
+    panel.grid.major.y = element_line(linetype = 'dashed',color = 'grey70'),
+    panel.grid.major.x = element_blank(),
+    # panel.grid = element_blank(),
+    legend.position = 'none',
+    panel.border = element_rect(size = 0.5),
+    text = element_text(size=8),
+    axis.text = element_text(size = 8), 
+    plot.title = element_text(size = 9)
+  )
+
+theme_evan_facet <- theme_bw() +
+  theme(
+    panel.grid.minor = element_blank(),
+    panel.grid.major.y = element_blank(),
+    panel.grid.major.x = element_blank(),
+    # panel.grid = element_blank(),
+    # legend.position = 'none',
+    panel.border = element_rect(size = 0.5),
+    strip.background = element_rect(fill = 'white'),
+    text = element_text(size=12),
+    axis.text = element_text(size = 12), 
+    plot.title = element_text(size = 13)
+  )
+season_facet <- theme_evan_facet + theme(
+  legend.position = 'none', 
+  strip.background = element_blank(),
+  strip.text = element_text(hjust = 0, margin = margin(0,0,0,0, unit = 'pt'))
+)
+
+fancy_scientific_modified <- function(l) { 
+  # turn in to character string in scientific notation 
+  if(abs(max(log10(l), na.rm = T) - min(log10(l), na.rm = T)) > 2 | 
+     # min(l, na.rm = T) < 0.01 | 
+     max(l, na.rm = T) > 1e5){ 
+    l <- log10(l)
+    label <- parse(text = paste("10^",as.character(l),sep = ""))
+  }else{
+    label <- parse(text = paste(as.character(l), sep = ""))
+  }
+  # print(label)
+  # return(parse(text=paste("'Discharge [m'", "^3* s", "^-1 ", "*']'", sep="")))
+  return(label)
+}
+
+lat_dd_lab <- function(l){
+  label <- c()
+  for(i in 1:length(l)){
+    label_sel <- ifelse(l[i] < 0, paste0(abs(l[i]), '°S'), 
+                        paste0(abs(l[i]), '°N'))
+    label <- c(label, label_sel)
+  }
+  return(label)}
+
+long_dd_lab <- function(l){
+  label <- c()
+  for(i in 1:length(l)){
+    label_sel <- ifelse(l[i] < 0, paste0(abs(l[i]), '°W'), 
+                        paste0(abs(l[i]), '°E'))
+    label <- c(label, label_sel)
+  }
+  return(label)}
+
+abbrev_year <- function(l){
+  label <- c() 
+  for(i in 1:length(l)){
+    label_sel <- paste0("'",substr(as.character(l[i]),3,4))
+    label <- c(label, label_sel)  
+  }
+  return(label)}
+
+#### iii. SET DIRECTORIES ####
+# Set root directory
+wd_root <- getwd()
+
+# Imports folder (store all import files here)
+wd_imports <- paste0(wd_root,"/imports/")
+# Exports folder (save all figures, tables here)
+wd_exports <- paste0(wd_root,"/exports/")
+
+wd_figures <- paste0(wd_root, "/figures/")
+
+wd_oil_palm_subfolder <- paste0(wd_imports, 'oil_palm_and_mining_rivers_ssc_data/')
+
+# Create folders within root directory to organize outputs if those folders do not exist
+export_folder_paths <- c(wd_imports, wd_exports, wd_figures, wd_oil_palm_subfolder)
+for(i in 1:length(export_folder_paths)){
+  path_sel <- export_folder_paths[i]
+  if(!dir.exists(path_sel)){
+    dir.create(path_sel)}
+}
+
+
+
+
+#### 1. IMPORT SSC DATA FROM OIL PALM REGIONS ####
+# Make a list of file paths that store data from oil palm sites
+individual_river_ma_data_files <- list.files(pattern = 'ssc_ma_timeseries_', wd_oil_palm_subfolder)
+
+# Import metadata about oil palm occurrence along river profiles
+selected_ma_sites_all <- fread(paste0(wd_oil_palm_subfolder, 'oil_palm_sites.csv'))
+
+# Import data from selected files and combine into a single data.table
+palm_oil_ssc_ma_timeseries <- rbindlist(lapply( 
+  paste0(paste0(wd_oil_palm_subfolder, individual_river_ma_data_files)),
+  fread),
+  use.names = T, fill = T)
+
+# Restrict to oil palm and mining timeframes and river reaches
+palm_oil_ssc_ma_timeseries <- merge(palm_oil_ssc_ma_timeseries, selected_ma_sites_all, by = 'site_no')
+palm_oil_ssc_ma_timeseries <- palm_oil_ssc_ma_timeseries[year < year_end & 
+                                                         distance_10km > distance_km_start  &
+                                                         distance_10km < distance_km_end]
+
+# Make columns for SSC anomaly and determining mining activity
 palm_oil_ssc_ma_timeseries <- palm_oil_ssc_ma_timeseries[
         ,':='(ssc_anomaly = (SSC_mgL_3yr - mean(SSC_mgL_3yr, na.rm = T))/sd(SSC_mgL_3yr, na.rm = T),
               period = ifelse(year < mining_onset, 'Oil palm', 'Active mining')),
                            by = .(site_no, mining_onset)]
 
+# Summarize anomaly for each year
 palm_oil_ssc_ma_timeseries_anomaly <- palm_oil_ssc_ma_timeseries[,.(ssc_anomaly = mean(ssc_anomaly, na.rm = T)), 
                            by = .(site_no, year, mining_onset, period)]
 
-#### CALCULATE PRE-MINING AND POST-MINING SSC INCREASE SLOPES ####
+#### 2. CALCULATE PRE-MINING AND POST-MINING SSC INCREASE SLOPES ####
 
-getPrePost_mining_slopes <- function(dt){
+getPrePost_mining_slopes <- function(site_no_sel){
+  dt <- palm_oil_ssc_ma_timeseries[site_no == site_no_sel]
   # Split by mining onset
   dt_pre <- dt[year < mining_onset & !is.na(SSC_mgL_3yr)]
   dt_post <- dt[year >= (mining_onset-1) & !is.na(SSC_mgL_3yr)]
@@ -57,58 +181,9 @@ getPrePost_mining_slopes <- function(dt){
   return(slope_summary)
 }
 
-kampar_pre_mining_slope <- getPrePost_mining_slopes(kampar_trib)
-print(kampar_pre_mining_slope)
-
-batang_hari_trib2_slope <- getPrePost_mining_slopes(batang_hari_trib2[year < 2007])
-print(batang_hari_trib2_slope)
-
-batang_hari_bedaro_slope <- getPrePost_mining_slopes(batang_hari_bedaro)
-print(batang_hari_bedaro_slope)
-
-batang_hari_slope <- getPrePost_mining_slopes(batang_hari)
-print(batang_hari_slope)
-
-indonesia_batang_asai_upper_agm_region_slope <- getPrePost_mining_slopes(indonesia_batang_asai_upper_agm_region)
-print(indonesia_batang_asai_upper_agm_region_slope)
-
-indonesia_west_kalimantan_monggo_slope <- getPrePost_mining_slopes(indonesia_west_kalimantan_monggo)
-print(indonesia_west_kalimantan_monggo_slope)
-
-indonesia_kapuas_trib_slope <- getPrePost_mining_slopes(indonesia_kapuas_trib)
-print(indonesia_kapuas_trib_slope)
-
-indonesia_kahayan_slope <- getPrePost_mining_slopes(indonesia_kahayan)
-print(indonesia_kahayan_slope)
-
-indonesia_nabire_barat_slope <- getPrePost_mining_slopes(indonesia_nabire_barat)
-print(indonesia_nabire_barat_slope)
-
-indonesia_south_sumatra_soetangegoh_agm_region_slope <- getPrePost_mining_slopes(indonesia_south_sumatra_soetangegoh_agm_region)
-print(indonesia_south_sumatra_soetangegoh_agm_region_slope)
-
-indonesia_lampung_agm_region_slope <- getPrePost_mining_slopes(indonesia_lampung_agm_region)
-print(indonesia_lampung_agm_region_slope)
-
-indonesia_maura_soma_agm_region_slope <- getPrePost_mining_slopes(indonesia_maura_soma_agm_region)
-print(indonesia_maura_soma_agm_region_slope)
-
-ghana_pra_dn_slope <- getPrePost_mining_slopes(ghana_pra_dn)
-print(ghana_pra_dn_slope)
-
-ghana_pra_up_slope <- getPrePost_mining_slopes(ghana_pra_up)
-print(ghana_pra_up_slope)
-
-liberia_cavalla_river_agm_region_slope <- getPrePost_mining_slopes(liberia_cavalla_river_agm_region)
-print(liberia_cavalla_river_agm_region_slope)
-
-palm_oil_comparison_comb <- rbind(kampar_pre_mining_slope, batang_hari_trib2_slope, batang_hari_bedaro_slope,
-                                  batang_hari_slope, indonesia_batang_asai_upper_agm_region_slope, 
-                                  indonesia_west_kalimantan_monggo_slope, indonesia_kapuas_trib_slope,
-                                  indonesia_kahayan_slope, indonesia_nabire_barat_slope, ghana_pra_dn_slope,
-                                  ghana_pra_up_slope, indonesia_south_sumatra_soetangegoh_agm_region_slope,
-                                  indonesia_lampung_agm_region_slope, liberia_cavalla_river_agm_region_slope,
-                                  indonesia_maura_soma_agm_region_slope)
+# Apply function to each 
+palm_oil_comparison_comb <- rbindlist(lapply(selected_ma_sites_all$site_no, getPrePost_mining_slopes),
+                                      use.names = T, fill = T)
 
 # Calculate slope change from oil palm period to mining period
 palm_oil_slope_change <- dcast.data.table(site_no ~ period, value.var = 'estimate', 
@@ -116,7 +191,7 @@ palm_oil_slope_change <- dcast.data.table(site_no ~ period, value.var = 'estimat
 palm_oil_slope_change <- palm_oil_slope_change[
   ,':='(fraction_change = (`Active mining` - `Oil palm`)/abs(`Oil palm`))]
 
-#### STATISTICS FOR MANUSCRIPT ####
+#### 3. STATISTICS FOR MANUSCRIPT ####
 # Average slope change for all rivers
 palm_oil_avg_slope_change <- palm_oil_slope_change[
               ,.(slope_change_mean = mean(fraction_change, na.rm = T),
@@ -131,7 +206,8 @@ palm_oil_comparison_summary <- palm_oil_comparison_comb[
   by = .(period)
 ]
 
-#### PLOTS FOR MANUSCRIPT ####
+#### 4. PLOTS FOR MANUSCRIPT ####
+## Extended data Fig. 2c
 # Plot boxplot of slope pre- and post-mining onset
 palm_oil_sites_pre_post_mining_slope_boxplot <- ggplot(palm_oil_comparison_comb, 
        aes(x = factor(period, levels = c('Oil palm', 'Active mining')), y = estimate,
@@ -147,6 +223,7 @@ palm_oil_sites_pre_post_mining_slope_boxplot <- ggplot(palm_oil_comparison_comb,
     fill = ''
   )
 
+## Extended data Fig. 2b
 # Plot line plot of average standardized SSC relative to mining onset
 palm_oil_period_rect <- data.table(xmin = -Inf, xmax = 0, ymin = -Inf, ymax = Inf)
 mining_period_rect <- data.table(xmin = 0, xmax = Inf, ymin = -Inf, ymax = Inf)
@@ -173,23 +250,27 @@ palm_oil_sites_pre_post_mining <-
     y = 'SSC standardized anomaly'
   )
 
-print(palm_oil_sites_pre_post_mining)
+# print(palm_oil_sites_pre_post_mining)
 
+## Extended data Fig. 2a
 # Plot case study example
-batang_hari_trib2_palm_oil_period_rect <- data.table(xmin = -Inf, xmax = batang_hari_trib2$mining_onset[1], ymin = -Inf, ymax = Inf)
+batang_hari_trib2_dt <- palm_oil_ssc_ma_timeseries[site_no == 'indonesia_batang_hari_trib2']
+batang_hari_trib2_palm_oil_period_rect <- data.table(xmin = -Inf, 
+                                                     xmax = batang_hari_trib2_dt$mining_onset[1], 
+                                                     ymin = -Inf, ymax = Inf)
 batang_hari_trib2_ssc_ma_timeseries_plot <- ggplot() + 
   geom_rect(data = batang_hari_trib2_palm_oil_period_rect, aes(xmin = xmin, xmax = xmax, ymin = ymin, ymax = ymax), 
             fill = 'grey70', alpha = 0.2, inherit.aes = F) +
-  geom_line(data = batang_hari_trib2[!is.na(SSC_mgL)],
+  geom_line(data = batang_hari_trib2_dt[!is.na(SSC_mgL)],
             aes(x = (year + month/12), y = SSC_mgL, color = 'Monthly average'), lty = 'dashed') +
-  geom_point(data = batang_hari_trib2[!is.na(SSC_mgL)],
+  geom_point(data = batang_hari_trib2_dt[!is.na(SSC_mgL)],
              aes(x = (year + month/12), y = SSC_mgL, color = 'Monthly average')) +
-  geom_line(data = batang_hari_trib2[!is.na(SSC_mgL_3yr)], aes(x = (year + month/12), y = SSC_mgL_3yr, color = '3-yr moving average'), color = 'red') +
-  geom_vline(xintercept = batang_hari_trib2$mining_onset[1], lty = 'dashed') +
+  geom_line(data = batang_hari_trib2_dt[!is.na(SSC_mgL_3yr)], aes(x = (year + month/12), y = SSC_mgL_3yr, color = '3-yr moving average')) +
+  geom_vline(xintercept = batang_hari_trib2_dt$mining_onset[1], lty = 'dashed') +
   geom_text(data = palm_oil_comparison_summary, aes(x = 1987, y = 1500, hjust = 0, vjust = 1,
                                                     label = paste0('Oil palm cultivation\n(Pre-mining)'))) +
   scale_color_manual(values = c('Monthly average' = 'black', '3-yr moving average' = 'red')) +
-  facet_wrap(.~paste0(Country, '\n', transect_display_name)) +
+  facet_wrap(.~paste0(Country, '\n', profile_display_name, '\n', gsub('profile_','p',`Profile id`))) +
   season_facet +
   # facet_wrap(.~(distance_10km)) +
   theme(
@@ -202,8 +283,10 @@ batang_hari_trib2_ssc_ma_timeseries_plot <- ggplot() +
     color = 'Metric'
   )
 
-print(batang_hari_trib2_ssc_ma_timeseries_plot)
+# print(batang_hari_trib2_ssc_ma_timeseries_plot)
 
+## Extended data Fig. 2
+# Combine a,b,c
 palm_oil_sites_pre_post_mining_comb_plot <- batang_hari_trib2_ssc_ma_timeseries_plot /
                                             (palm_oil_sites_pre_post_mining + 
                                             palm_oil_sites_pre_post_mining_slope_boxplot) +
@@ -211,9 +294,9 @@ palm_oil_sites_pre_post_mining_comb_plot <- batang_hari_trib2_ssc_ma_timeseries_
   theme(plot.tag = element_text(face = 'bold'))
 
 ggsave(palm_oil_sites_pre_post_mining_comb_plot, 
-       filename = paste0(wd_figures, 'palm_oil_sites_pre_post_mining_comb_plot.pdf'),
+       filename = paste0(wd_figures, 'figE2_palm_oil_sites_pre_post_mining_comb_plot.pdf'),
        width = 8.5, height = 10, useDingbats = F)
 ggsave(palm_oil_sites_pre_post_mining_comb_plot, 
-       filename = paste0(wd_figures, 'palm_oil_sites_pre_post_mining_comb_plot.png'),
+       filename = paste0(wd_figures, 'figE2_palm_oil_sites_pre_post_mining_comb_plot.png'),
        width = 8.5, height = 10)
    
