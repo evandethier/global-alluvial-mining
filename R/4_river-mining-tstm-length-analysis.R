@@ -1,16 +1,135 @@
+#### i. LIBRARY IMPORTS ####
 library(data.table)
+
 library(ggplot2)
-#### IMPORT DATA ####
+library(maps)
+library(scales)
+library(ggthemes)
+library(ggpubr)
+library(gstat)
+library(markdown)
+library(ggtext)
+
+library(lubridate)
+library(dataRetrieval)
+library(maps)
+library(glmnet)
+library(rgdal)
+library(Hmisc)
+library(zoo)
+
+library(readxl)
+library(patchwork)
+library(egg)
+
+library(tidyr)
+library(broom)
+
+
+#### ii. THEMES ####
+theme_evan <- theme_bw() +
+  theme(
+    panel.grid.minor = element_blank(),
+    panel.grid.major.y = element_line(linetype = 'dashed',color = 'grey70'),
+    panel.grid.major.x = element_blank(),
+    # panel.grid = element_blank(),
+    legend.position = 'none',
+    panel.border = element_rect(size = 0.5),
+    text = element_text(size=8),
+    axis.text = element_text(size = 8), 
+    plot.title = element_text(size = 9)
+  )
+
+theme_evan_facet <- theme_bw() +
+  theme(
+    panel.grid.minor = element_blank(),
+    panel.grid.major.y = element_blank(),
+    panel.grid.major.x = element_blank(),
+    # panel.grid = element_blank(),
+    # legend.position = 'none',
+    panel.border = element_rect(size = 0.5),
+    strip.background = element_rect(fill = 'white'),
+    text = element_text(size=12),
+    axis.text = element_text(size = 12), 
+    plot.title = element_text(size = 13)
+  )
+season_facet <- theme_evan_facet + theme(
+  legend.position = 'none', 
+  strip.background = element_blank(),
+  strip.text = element_text(hjust = 0, margin = margin(0,0,0,0, unit = 'pt'))
+)
+
+fancy_scientific_modified <- function(l) { 
+  # turn in to character string in scientific notation 
+  if(abs(max(log10(l), na.rm = T) - min(log10(l), na.rm = T)) > 2 | 
+     # min(l, na.rm = T) < 0.01 | 
+     max(l, na.rm = T) > 1e5){ 
+    l <- log10(l)
+    label <- parse(text = paste("10^",as.character(l),sep = ""))
+  }else{
+    label <- parse(text = paste(as.character(l), sep = ""))
+  }
+  # print(label)
+  # return(parse(text=paste("'Discharge [m'", "^3* s", "^-1 ", "*']'", sep="")))
+  return(label)
+}
+
+lat_dd_lab <- function(l){
+  label <- c()
+  for(i in 1:length(l)){
+    label_sel <- ifelse(l[i] < 0, paste0(abs(l[i]), '°S'), 
+                        paste0(abs(l[i]), '°N'))
+    label <- c(label, label_sel)
+  }
+  return(label)}
+
+long_dd_lab <- function(l){
+  label <- c()
+  for(i in 1:length(l)){
+    label_sel <- ifelse(l[i] < 0, paste0(abs(l[i]), '°W'), 
+                        paste0(abs(l[i]), '°E'))
+    label <- c(label, label_sel)
+  }
+  return(label)}
+
+abbrev_year <- function(l){
+  label <- c() 
+  for(i in 1:length(l)){
+    label_sel <- paste0("'",substr(as.character(l[i]),3,4))
+    label <- c(label, label_sel)  
+  }
+  return(label)}
+
+#### iii. SET DIRECTORIES ####
+# Set root directory
+wd_root <- getwd()
+
+# Imports folder (store all import files here)
+wd_imports <- paste0(wd_root,"/imports/")
+# Exports folder (save all figures, tables here)
+wd_exports <- paste0(wd_root,"/exports/")
+
+wd_figures <- paste0(wd_root, "/figures/")
+
+wd_oil_palm_subfolder <- paste0(wd_imports, 'oil_palm_and_mining_rivers_ssc_data/')
+
+# Create folders within root directory to organize outputs if those folders do not exist
+export_folder_paths <- c(wd_imports, wd_exports, wd_figures, wd_oil_palm_subfolder)
+for(i in 1:length(export_folder_paths)){
+  path_sel <- export_folder_paths[i]
+  if(!dir.exists(path_sel)){
+    dir.create(path_sel)}
+}
+
+#### 1. IMPORT DATA ####
 # Elevated river reaches
-river_reaches_elevated_2020 <- fread('river_reaches_elevated_2020.csv')
-river_reaches_elevated_2020[grepl('inambari', site_no)]
-river_reaches_elevated_2020[grepl('quimiri', site_no)]
+river_reaches_elevated_2020 <- fread(paste0(wd_imports, 'river_reaches_elevated_2020.csv'))
 
 # All sites metadata
-site_metadata_all <- fread('rm_site_metadata.csv')[
-  # ,':='(site_no = ifelse(is.na(`Transect name`), `AGM district name`, `Transect name`))
+site_metadata_all <- fread(paste0(wd_imports, 'rm_site_metadata.csv'))[
+  # ,':='(site_no = ifelse(is.na(`Profile name`), `AGM district name`, `Profile name`))
   ][
-  ,.(`AGM district name`, `Transect name`, River, `Major river`, country_display, continent_display, site_no)
+  ,.(`AGM district name`, ID, `Profile name`, River, `Major river`, country_display, continent_display, site_no)
 ]
 
 # Small river length
@@ -23,15 +142,18 @@ tstm_river_length <- fread(paste0(wd_imports, '/river_data_from_earth_engine/min
       ,':='(site_no = ifelse(site_no == 'peru_rio_malinowski_middle_agm_region7', 'peru_rio_malinowski_middle_agm_region', site_no))
     ]
 
-sum(tstm_river_length$length_km)
-sum(tstm_river_length$area_km2)
-
-100 * sum(tstm_river_length$area_km2) * 100
+# Correct typos in dataset
+tstm_river_length <- tstm_river_length[,':='(site_no = gsub('region7', 'region', site_no))]
+tstm_river_length <- tstm_river_length[,':='(site_no = gsub('kyrgystan', 'kyrgyzstan', site_no))]
+tstm_river_length <- tstm_river_length[,':='(site_no = gsub('phillipines', 'philippines', site_no))]
+tstm_river_length <- tstm_river_length[,':='(site_no = gsub('bagre_upper_agm_region', 'bagre_upper_agm_region_TSTM', site_no))]
+tstm_river_length <- tstm_river_length[,':='(site_no = gsub('somotillo_agm_region', 'somotillo_agm_region_TSTM', site_no))]
 
 fwrite(tstm_river_length,
        file = paste0(wd_imports, 
                      '/river_data_from_earth_engine/mining_on_small_rivers_length_clean.csv'))
-#### ANALYZE SMALL RIVER LENGTH BY SITE ####
+#### 2. ANALYZE SMALL RIVER LENGTH AND AREA BY SITE ####
+# Sum length from different polygons for each river area
 tstm_river_length_summary <- tstm_river_length[
   ,.(small_river_length_km = sum(length_km, na.rm = T),
      area_km2 = sum(area_km2, na.rm = T)),
@@ -44,6 +166,7 @@ fwrite(tstm_river_length_summary,
        file = paste0(wd_imports, 
                      '/river_data_from_earth_engine/mining_on_small_rivers_length_summary.csv'))
 
+## Fig. S10b
 # Mining area vs. affected small river length scatter plot
 tstm_scatter <- ggplot(tstm_river_length_summary, aes(x = area_km2, y = small_river_length_km, fill = site_tstm)) +
   geom_point(size = 4, color = 'black', pch = 21, lwd = 0.25) +
@@ -57,6 +180,7 @@ tstm_scatter <- ggplot(tstm_river_length_summary, aes(x = area_km2, y = small_ri
        y = 'Mining-affected small rivers (width < 50 m)\n(km affected)',
        fill = 'Watershed position')
 
+## Fig. S10c
 # Small river mining length boxplot
 tstm_length_boxplot <- ggplot(tstm_river_length_summary, aes(x = site_tstm, y = small_river_length_km, fill = site_tstm)) +
   geom_boxplot() +
@@ -70,6 +194,7 @@ tstm_length_boxplot <- ggplot(tstm_river_length_summary, aes(x = site_tstm, y = 
        y = 'Mining-affected small rivers (width < 50 m)\n(km affected)',
        fill = 'Watershed position')
 
+## Fig. S10a
 # Small site river area boxplot
 tstm_area_boxplot <- ggplot(tstm_river_length_summary, aes(y = site_tstm, x = area_km2, fill = site_tstm)) +
   geom_boxplot() +
@@ -84,18 +209,8 @@ tstm_area_boxplot <- ggplot(tstm_river_length_summary, aes(y = site_tstm, x = ar
        fill = 'Watershed position') 
   # theme(axis.title.x = element_markdown() # add to show axis
 
-# Summary plot of mining aerial extent and water length requirements
-combined_tstm_summary_plots <- tstm_area_boxplot + plot_spacer() + tstm_scatter + tstm_length_boxplot +
-  plot_layout(heights = c(0.2, 1), widths = c(1, 0.2))
 
-ggsave(combined_tstm_summary_plots, filename = paste0(wd_figures, 'combined_tstm_summary_plots.pdf'),
-       width = 5, height = 6, useDingbats = F)
-ggsave(combined_tstm_summary_plots, filename = paste0(wd_figures, 'combined_tstm_summary_plots.png'),
-       width = 5, height = 6)
-  
-
-
-#### JOIN ALL SITE DATA ####
+#### 3. CALCULATE RIVER LENGTH AND AREA IMPACTS ####
 # Combine small and large river length tables
 # Remove all rows with sites that don't have small rivers mapped
 # If large river is too small to map (i.e., km_Nx is NA), make that 0
@@ -105,7 +220,7 @@ small_river_length_meta <- merge(site_metadata_all, tstm_river_length_summary,
 
 
 small_and_large_river_length <- merge(small_river_length_meta, river_reaches_elevated_2020[
-  ,.(site_no, half_decade, km_Nx, Nx, transect_display_name)
+  ,.(site_no, half_decade, km_Nx, Nx, profile_display_name)
 ], 
                                       by = c('site_no'), all.x = T)
 
@@ -118,29 +233,16 @@ small_and_large_river_length <- small_and_large_river_length[
      small_river_length_km = sum(small_river_length_km, na.rm = T),
      area_km2 = sum(area_km2, na.rm = T)
      ),
-      by = .(site_no, transect_display_name, country_display, continent_display)][
+      by = .(site_no, profile_display_name, country_display, continent_display)][
     ,':='(km_Nx = ifelse(is.na(km_Nx), 0, km_Nx))][
     ,':='(total_river_km = small_river_length_km + km_Nx, # Add small and large river length
-          transect_display_name = toupper(ifelse(!is.na(transect_display_name), transect_display_name,
+          profile_display_name = toupper(ifelse(!is.na(profile_display_name), profile_display_name,
                                          gsub('agm region TSTM| TSTM', '', gsub('_', ' ', site_no))))) 
   ][,':='(additional_small_river_fraction = total_river_km/km_Nx,
           site_tstm = ifelse(km_Nx == 0, 'Headwater sites', 'Large river sites'))]
 
-small_and_large_river_length <- small_and_large_river_length[]
-#### PLOT SMALL VS LARGE RIVER LENGTH ###
-river_small_and_large_length_plot <- ggplot(small_and_large_river_length, aes(fill = site_tstm)) +
-  geom_segment(aes(x = paste0(country_display, ', ', transect_display_name), xend = paste0(country_display, ', ', transect_display_name), y = km_Nx, yend = total_river_km)) +
-  geom_point(aes(x = paste0(country_display, ', ', transect_display_name), y = km_Nx), size = 4, color = 'black', pch = 21, lwd = 0.25) +
-  geom_point(aes(x = paste0(country_display, ', ', transect_display_name), y = total_river_km), size = 4, color = 'black', pch = 21, lwd = 0.25) +
-  scale_fill_manual(values = c('#2EB8F2', '#4007A6')) +
-  facet_wrap(.~site_tstm, scales = 'free') +
-  season_facet + 
-  theme(
-    # legend.position = c(0.2, 0.9),
-    axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1)) +
-  labs(y = 'Mining-affected small rivers (width < 50 m)\n(km affected)',
-       fill = 'Watershed position')
-
+#### 4. CREATE ANNOTATIONS FOR PLOTS OF SMALL VS LARGE RIVER LENGTH & AREA ####
+# Summarize length and area for small and large river groups
 small_and_large_river_length_summary <- small_and_large_river_length[
   ,.(small_river_length_km = mean(small_river_length_km, na.rm = T),
      small_river_length_se = sd(small_river_length_km, na.rm = T)/sqrt(.N),
@@ -154,7 +256,7 @@ small_and_large_river_length_summary <- small_and_large_river_length[
 ]
 
 # Extrapolate river length estimates to full dataset
-small_and_large_river_n_sites <- fread('small_and_large_river_n_sites.csv')
+small_and_large_river_n_sites <- fread(paste0(wd_imports,'small_and_large_river_n_sites.csv'))
 
 small_and_large_river_length_summary <- small_and_large_river_length_summary[small_and_large_river_n_sites, on = 'site_tstm'][
   ,':='(river_km_total = N_total_rivers * small_river_length_km,
@@ -163,24 +265,15 @@ small_and_large_river_length_summary <- small_and_large_river_length_summary[sma
 
 total_additional_small_river_length <- small_and_large_river_length_summary[,.(additional_river_length = sum(river_km_total, na.rm = T))]
 
-river_affected_length_for_small_and_large <- ggplot(small_and_large_river_length, aes(x = site_tstm, y = small_river_length_km, fill = site_tstm)) +
-  geom_boxplot() +
-  geom_richtext(data = small_and_large_river_length_summary, fill = 'white', label.color = NA,
-            aes(x = site_tstm, y = 2000, 
-                label = paste0(round(small_river_length_km, 0), ' km<br>(+/- ', round(small_river_length_se, 1), ' km SE)<br>',
-                               'N = ', N_rivers, ' areas'))) +
-  scale_fill_manual(values = c('#2EB8F2', '#4007A6')) +
-  season_facet + 
-  scale_y_log10() +
-  labs(x = 'Watershed position',
-       y = 'Small rivers affected by mining (width < 50 m)\n(km affected)')
-
+#### 5. COMBINE PLOTS WITH ANNOTATIONS ####
+## Fig. S10
+# Combined a,b,c
 # Summary plot of mining aerial extent and water length requirements
 combined_tstm_summary_annotated_plots <- 
   (tstm_area_boxplot + scale_x_log10(limits = c(0.05, 4000), labels = fancy_scientific_modified) +
      geom_richtext(data = small_and_large_river_length_summary, fill = 'white', label.color = NA,
                aes(y = site_tstm, x = 800, 
-                   label = paste0('Avg. = ', round(mining_area_km2, 1), ' km<sup>2</sup><br>(+/- ', round(mining_area_km2_se, 1), ' km SE)<br>',
+                   label = paste0('Avg. = ', round(mining_area_km2, 0), ' km<sup>2</sup><br>(+/- ', round(mining_area_km2_se, 0), ' km SE)<br>',
                                   'N = ', N_rivers, ' areas')))
      ) +
   plot_spacer() + 
@@ -189,13 +282,14 @@ combined_tstm_summary_annotated_plots <-
      scale_y_log10(limits = c(1, 3000)) +
      geom_richtext(data = small_and_large_river_length_summary, fill = 'white', label.color = NA,
                aes(x = site_tstm, y = 2000, 
-                   label = paste0('Avg. = ', round(small_river_length_km, 0), ' km<br>(+/- ', round(small_river_length_se, 1), ' km SE)<br>',
+                   label = paste0('Avg. = ', round(small_river_length_km, 0), ' km<br>(+/- ', round(small_river_length_se, 0), ' km SE)<br>',
                                   'N = ', N_rivers, ' areas')))) +
-  plot_layout(heights = c(0.3, 0.5), widths = c(0.5, 0.33))
+  plot_layout(heights = c(0.3, 0.5), widths = c(0.5, 0.33)) +
+    plot_annotation(tag_levels = 'a')
 
-ggsave(combined_tstm_summary_annotated_plots, filename = paste0(wd_figures, 'combined_tstm_summary_annotated_plots.pdf'),
+ggsave(combined_tstm_summary_annotated_plots, filename = paste0(wd_figures, 'figS10_combined_tstm_summary_annotated_plots.pdf'),
        width = 8, height = 8, useDingbats = F)
-ggsave(combined_tstm_summary_annotated_plots, filename = paste0(wd_figures, 'combined_tstm_summary_annotated_plots.png'),
+ggsave(combined_tstm_summary_annotated_plots, filename = paste0(wd_figures, 'figS10_combined_tstm_summary_annotated_plots.png'),
        width = 8, height = 8)
 
 

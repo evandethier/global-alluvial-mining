@@ -1343,7 +1343,7 @@ river_reaches_elevated_2020 <- river_reaches_elevated_decadal[half_decade == 202
 print(paste0('total river km elevated SSC: ', sum(river_reaches_elevated_2020$km_Nx), ' km'))
 
 # Combine 2020 elevated river reaches with table of all profiles + metadata
-river_reaches_elevated_2020 <- river_reaches_elevated_2020[profile_name_display, on = 'site_no']
+river_reaches_elevated_2020 <- river_reaches_elevated_2020[profile_name_display[,-c('Profile id')], on = 'site_no']
 
 # Write 2020 elevated river km per profile to file
 fwrite(river_reaches_elevated_2020, file = paste0(wd_imports,'river_reaches_elevated_2020.csv'))
