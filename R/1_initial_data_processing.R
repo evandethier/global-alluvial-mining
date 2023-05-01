@@ -1,7 +1,14 @@
 # Import Landsat data (raw output from Google Earth Engine)
 #### i. LIBRARY IMPORTS ####
+## Tables
 library(data.table)
+library(readxl)
+library(rgdal)
+library(lubridate)
+library(tidyr)
+library(broom)
 
+## Plots
 library(ggplot2)
 library(maps)
 library(scales)
@@ -10,21 +17,16 @@ library(ggpubr)
 library(gstat)
 library(markdown)
 library(ggtext)
-
-library(lubridate)
-library(dataRetrieval)
-library(maps)
-library(glmnet)
-library(rgdal)
-library(Hmisc)
-library(zoo)
-
-library(readxl)
 library(patchwork)
 library(egg)
+library(zoo)
 
-library(tidyr)
-library(broom)
+## Data download
+library(dataRetrieval)
+
+## Analysis
+library(glmnet)
+library(Hmisc)
 
 #### ii. THEMES ####
 theme_evan <- theme_bw() +
@@ -96,7 +98,6 @@ long_dd_lab <- function(l){
 #### iii. SET DIRECTORIES ####
 # Set root directory
 wd_root <- getwd()
-
 # Imports folder (store all import files here)
 wd_imports <- paste0(wd_root,"/imports/")
 # Exports folder (save all figures, tables here)
@@ -104,14 +105,26 @@ wd_exports <- paste0(wd_root,"/exports/")
 
 wd_figures <- paste0(wd_root, "/figures/")
 
+# Subfolders for files
+wd_mining_mapping_import_folder <- paste0(wd_imports, 'mining_river_profiles/')
+wd_mining_mapping_folder <- paste0(wd_imports, 'mining_data_for_earth_engine/')
+wd_landsat_data <- paste0(wd_imports,'landsat_data_from_earth_engine/')
+wd_oil_palm_subfolder <- paste0(wd_imports, 'oil_palm_and_mining_rivers_ssc_data/')
+
 # Create folders within root directory to organize outputs if those folders do not exist
-export_folder_paths <- c(wd_imports, wd_exports, wd_figures)
+export_folder_paths <- c(wd_imports, wd_exports, wd_figures,
+                         wd_mining_mapping_import_folder, wd_mining_mapping_folder,
+                         wd_landsat_data, wd_oil_palm_subfolder)
+
 for(i in 1:length(export_folder_paths)){
   path_sel <- export_folder_paths[i]
   if(!dir.exists(path_sel)){
-    dir.create(path_sel)}
+    # dir.create(path_sel)
+    print(paste0('create: ', path_sel))
+  }else{
+    print(paste0('already exists: ', path_sel))
+  }
 }
-
 
 #### 1. IMPORT DATA AND DEFINE COLUMNS ####
 # Data can be downloaded from <10.5281/zenodo.7699122>
@@ -123,16 +136,16 @@ for(i in 1:length(export_folder_paths)){
 # Import Landsat river profile data for each batch of mining sites
 # Get filenames of each batch of mining sites
 profile_reflectance_data_files <- list.files(pattern = 'ls57_rawBands_b7lt500.csv',
-                                             paste0(wd_imports,'landsat_data_from_earth_engine/'))
+                                             wd_landsat_data)
 
 # Combine Landsat sample data into one data.table
 asgm_river_import <- rbindlist(
   lapply(
-    paste0(wd_imports, 'landsat_data_from_earth_engine/', profile_reflectance_data_files), 
+    paste0(wd_landsat_data, profile_reflectance_data_files), 
     fread),
   use.names = T, fill = T)[,':='(.geo = NULL)]
 
-# Fix typos in profile names
+# Fix typos in profile names (should be obsolete now that these are fixed)
 asgm_river_import <- asgm_river_import[,':='(name = gsub('yrgystan', 'yrgyzstan', name))]
 asgm_river_import <- asgm_river_import[,':='(name = gsub('hillipin', 'hilippin', name))]
 

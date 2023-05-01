@@ -1,6 +1,13 @@
 #### i. LIBRARY IMPORTS ####
+## Tables
 library(data.table)
+library(readxl)
+library(rgdal)
+library(lubridate)
+library(tidyr)
+library(broom)
 
+## Plots
 library(ggplot2)
 library(maps)
 library(scales)
@@ -9,21 +16,17 @@ library(ggpubr)
 library(gstat)
 library(markdown)
 library(ggtext)
-
-library(lubridate)
-library(dataRetrieval)
-library(maps)
-library(glmnet)
-library(rgdal)
-library(Hmisc)
-library(zoo)
-
-library(readxl)
 library(patchwork)
 library(egg)
+library(zoo)
 
-library(tidyr)
-library(broom)
+## Data download
+library(dataRetrieval)
+
+## Analysis
+library(glmnet)
+library(Hmisc)
+
 
 
 #### ii. THEMES ####
@@ -103,7 +106,6 @@ abbrev_year <- function(l){
 #### iii. SET DIRECTORIES ####
 # Set root directory
 wd_root <- getwd()
-
 # Imports folder (store all import files here)
 wd_imports <- paste0(wd_root,"/imports/")
 # Exports folder (save all figures, tables here)
@@ -111,15 +113,29 @@ wd_exports <- paste0(wd_root,"/exports/")
 
 wd_figures <- paste0(wd_root, "/figures/")
 
+# Subfolders for files
+wd_mining_mapping_import_folder <- paste0(wd_imports, 'mining_river_profiles/')
+wd_mining_mapping_folder <- paste0(wd_imports, 'mining_data_for_earth_engine/')
+wd_landsat_data <- paste0(wd_imports,'landsat_data_from_earth_engine/')
+wd_river_lengths <- paste0(wd_imports, 'river_data_from_earth_engine/')
 wd_oil_palm_subfolder <- paste0(wd_imports, 'oil_palm_and_mining_rivers_ssc_data/')
 
 # Create folders within root directory to organize outputs if those folders do not exist
-export_folder_paths <- c(wd_imports, wd_exports, wd_figures, wd_oil_palm_subfolder)
+export_folder_paths <- c(wd_imports, wd_exports, wd_figures,
+                         wd_mining_mapping_import_folder, wd_mining_mapping_folder,
+                         wd_landsat_data, wd_oil_palm_subfolder, wd_river_lengths)
+
 for(i in 1:length(export_folder_paths)){
   path_sel <- export_folder_paths[i]
   if(!dir.exists(path_sel)){
-    dir.create(path_sel)}
+    # dir.create(path_sel)
+    print(paste0('create: ', path_sel))
+  }else{
+    print(paste0('already exists: ', path_sel))
+  }
 }
+
+
 
 #### 1. IMPORT DATA ####
 # Elevated river reaches
@@ -133,7 +149,7 @@ site_metadata_all <- fread(paste0(wd_imports, 'rm_site_metadata.csv'))[
 ]
 
 # Small river length
-tstm_river_length <- fread(paste0(wd_imports, '/river_data_from_earth_engine/mining_on_small_rivers_length_20230404.csv'))[
+tstm_river_length <- fread(paste0(wd_river_lengths, 'mining_on_small_rivers_length_20230404.csv'))[
   ,':='(
     site_no_spec = site_no,
     site_no = gsub(pattern = '_[0-9]+$', replace = '', x = site_no),
@@ -150,8 +166,7 @@ tstm_river_length <- tstm_river_length[,':='(site_no = gsub('bagre_upper_agm_reg
 tstm_river_length <- tstm_river_length[,':='(site_no = gsub('somotillo_agm_region', 'somotillo_agm_region_TSTM', site_no))]
 
 fwrite(tstm_river_length,
-       file = paste0(wd_imports, 
-                     '/river_data_from_earth_engine/mining_on_small_rivers_length_clean.csv'))
+       file = paste0(wd_river_lengths,'mining_on_small_rivers_length_clean.csv'))
 #### 2. ANALYZE SMALL RIVER LENGTH AND AREA BY SITE ####
 # Sum length from different polygons for each river area
 tstm_river_length_summary <- tstm_river_length[
@@ -163,8 +178,7 @@ tstm_river_length_summary <- tstm_river_length[
 ]
 
 fwrite(tstm_river_length_summary,
-       file = paste0(wd_imports, 
-                     '/river_data_from_earth_engine/mining_on_small_rivers_length_summary.csv'))
+       file = paste0(wd_river_lengths,'mining_on_small_rivers_length_summary.csv'))
 
 ## Fig. S10b
 # Mining area vs. affected small river length scatter plot

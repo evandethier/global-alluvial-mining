@@ -1,6 +1,13 @@
 #### i. LIBRARY IMPORTS ####
+## Tables
 library(data.table)
+library(readxl)
+library(rgdal)
+library(lubridate)
+library(tidyr)
+library(broom)
 
+## Plots
 library(ggplot2)
 library(maps)
 library(scales)
@@ -9,21 +16,18 @@ library(ggpubr)
 library(gstat)
 library(markdown)
 library(ggtext)
-
-library(lubridate)
-library(dataRetrieval)
-library(maps)
-library(glmnet)
-library(rgdal)
-library(Hmisc)
-library(zoo)
-
-library(readxl)
 library(patchwork)
 library(egg)
+library(zoo)
 
-library(tidyr)
-library(broom)
+## Data download
+library(dataRetrieval)
+
+## Analysis
+library(glmnet)
+library(Hmisc)
+
+
 
 #### ii. THEMES ####
 theme_evan <- theme_bw() +
@@ -102,7 +106,6 @@ abbrev_year <- function(l){
 #### iii. SET DIRECTORIES ####
 # Set root directory
 wd_root <- getwd()
-
 # Imports folder (store all import files here)
 wd_imports <- paste0(wd_root,"/imports/")
 # Exports folder (save all figures, tables here)
@@ -110,18 +113,27 @@ wd_exports <- paste0(wd_root,"/exports/")
 
 wd_figures <- paste0(wd_root, "/figures/")
 
+# Subfolders for files
+wd_mining_mapping_import_folder <- paste0(wd_imports, 'mining_river_profiles/')
+wd_mining_mapping_folder <- paste0(wd_imports, 'mining_data_for_earth_engine/')
+wd_landsat_data <- paste0(wd_imports,'landsat_data_from_earth_engine/')
+wd_river_lengths <- paste0(wd_imports, 'river_data_from_earth_engine/')
 wd_oil_palm_subfolder <- paste0(wd_imports, 'oil_palm_and_mining_rivers_ssc_data/')
 
 # Create folders within root directory to organize outputs if those folders do not exist
-export_folder_paths <- c(wd_imports, wd_exports, wd_figures, wd_oil_palm_subfolder)
+export_folder_paths <- c(wd_imports, wd_exports, wd_figures,
+                         wd_mining_mapping_import_folder, wd_mining_mapping_folder,
+                         wd_landsat_data, wd_oil_palm_subfolder, wd_river_lengths)
+
 for(i in 1:length(export_folder_paths)){
   path_sel <- export_folder_paths[i]
   if(!dir.exists(path_sel)){
-    dir.create(path_sel)}
+    # dir.create(path_sel)
+    print(paste0('create: ', path_sel))
+  }else{
+    print(paste0('already exists: ', path_sel))
+  }
 }
-
-
-
 
 #### 1. IMPORT DATA ####
 # Then import landsat data
@@ -132,7 +144,8 @@ ssc_ma_timeseries <- fread(paste0(wd_imports,'river_mining_ssc_ma_timeseries.csv
 # All mining locations
 # All locations
 glasgm_locations_import <- readOGR(paste0(wd_imports,'ASGM_global_sites_10232022.kml'))
-# writeOGR(glasgm_locations_import, dsn = './mining_data_for_earth_engine/glasgm_locations_import', layer = 'glasgm_locations_import', driver = 'ESRI Shapefile')
+writeOGR(glasgm_locations_import, dsn = paste0(wd_mining_mapping_folder, 'glasgm_locations_import'), 
+         layer = 'glasgm_locations_import', driver = 'ESRI Shapefile', overwrite_layer = T)
 
 global_asgm_datatable_import <- data.table(data.frame(glasgm_locations_import))[
   ,':='(Latitude = coords.x2, Longitude = coords.x1)
@@ -145,11 +158,12 @@ profile_metadata <- data.table(read_excel(paste0(wd_imports,'agm-profile-metadat
 # Import topographic data for river profiles (distance, elevation, drainage area)
 # Import river topographic profile data for each batch of mining sites
 # Get filenames of each batch of mining sites
+# **This is not used in the analysis**
 profile_topo_data_files <- list.files(pattern = 'topo',
                                              paste0(wd_imports,'landsat_data_from_earth_engine/'))
 
 topo_data <- rbindlist(lapply( 
-  paste0(paste0(wd_imports,'landsat_data_from_earth_engine/',profile_topo_data_files)),
+  paste0(paste0(wd_landsat_data ,profile_topo_data_files)),
   fread),
   use.names = T, fill = T)[
     # ,':='(distance_km = unlist(lapply(`system:index`, strsplit, '_'))[2])
@@ -1502,7 +1516,8 @@ river_km_elevated_combined_plot <-
   theme(plot.tag = element_text(face = 'bold'),
         legend.position = 'top',
         legend.title = element_text(face = 'bold', size = 16),
-        legend.text = element_text(size = 14))
+        legend.text = element_text(size = 14),
+        panel.background = element_rect(fill = 'grey95'))
 
 # Focus on longest rivers in dataset
 ssc_ma_annual_profiles_500km <- ssc_ma_annual_full_profile_avg[site_no %chin% profiles_500km$site_no &
@@ -1559,7 +1574,8 @@ ssc_ma_annual_profiles_select_500km_plot <-
     color = 'Period'
   ) + 
   theme(axis.title.y = element_markdown(),
-        legend.position = 'top')
+        legend.position = 'top',
+        panel.background = element_rect(fill = 'grey95'))
 
 # Fig 3
 # Combined Fig. 3a, 3b, 3c
@@ -1746,9 +1762,9 @@ for(i in 1:7){
                                                          height = unit(1.15, "in"))
   
   ggsave(monthly_ssc_mining_vs_reference_plot, filename = paste0(wd_figures, 'fig', extended_fig_label_sel, '_', continent_write_name, '_monthly_ssc_mining_vs_reference_plot.pdf'),
-         width = 9, height = 13, useDingbats = F)
+         width = 9, height = 14, useDingbats = F)
   ggsave(monthly_ssc_mining_vs_reference_plot, filename = paste0(wd_figures, 'fig', extended_fig_label_sel, '_', continent_write_name, '_monthly_ssc_mining_vs_reference_plot.png'),
-         width = 9, height = 13)
+         width = 9, height = 14)
   
   # compute annual average SSC for each profile
   dt_annual_avg_SSC <- dt_ma_sel[
@@ -1822,12 +1838,11 @@ for(i in 1:7){
                                                          height = unit(0.85, "in"))
 
   ggsave(monthly_ssc_distribution_vs_reference_plot, filename = paste0(wd_figures, 'fig', supplemental_fig_labels_2_sel, '_', continent_write_name, '_monthly_ssc_distribution_vs_reference_plot.pdf'),
-         width = 9, height = 13, useDingbats = F)
+         width = 9, height = 14, useDingbats = F)
   ggsave(monthly_ssc_distribution_vs_reference_plot, filename = paste0(wd_figures, 'fig', supplemental_fig_labels_2_sel, '_', continent_write_name, '_monthly_ssc_distribution_vs_reference_plot.png'),
-         width = 9, height = 13)
+         width = 9, height = 14)
 }
 
-#### TO DO: GO BACK AND FIX KYRGYZSTAN NAME DISCREPANCY. SOURCE IS IN THE GEE DOWNLOAD FILE NAMES, SO NEED TO RENAME AT THE TOP ####
 # Summary of normality 
 shapiro_tests_summary <- melt(shapiro_tests_all, measure.vars = c('Reference', 'Active mining'))[
   ,':='(normal = ifelse(value < 0.01, 'non-normal', 'normal'))][
@@ -1965,12 +1980,12 @@ for(i in 1:7){
 #### 18. KILOMETERS AFFECTED VS. TOTAL KMS IN BASIN, COUNTRY, LAND MASS, REGION (TROPICS) ####
 
 river_km_by_mining_country <- fread(
-  paste0(wd_imports, 'river_data_from_earth_engine/', 
-         'river_lengths_by_mining_country_1000km2_60m_wide.csv'))[
+  paste0(wd_river_lengths, 
+         'river_lengths_by_mining_country_1000km2_50m_wide.csv'))[
            ,':='(.geo = NULL)]
 river_km_by_tropics <- rbind(fread(
-  paste0(wd_imports, 'river_data_from_earth_engine/',
-         'river_lengths_by_country_1000km2_60m_wide.csv'))[
+  paste0(wd_river_lengths,
+         'river_lengths_by_country_1000km2_50m_wide.csv'))[
   ,':='(.geo = NULL)][
     country != 'Myanmar'],
   river_km_by_mining_country[country == 'Myanmar'])
@@ -1979,7 +1994,7 @@ total_river_km_tropics <- sum(river_km_by_tropics$river_km)
 print(paste0('total river kilometers in tropics: ', round(total_river_km_tropics)))
 
 mining_rivers_country_basin <- fread(
-  paste0(wd_imports, 'river_data_from_earth_engine/',
+  paste0(wd_river_lengths,
          'mining_rivers_country_basin.csv'))[
   ,':='(.geo = NULL,
         BAS_NAME = NULL,

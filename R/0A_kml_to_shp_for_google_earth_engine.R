@@ -1,44 +1,128 @@
-
+#### i. LIBRARY IMPORTS ####
+## Tables
+library(data.table)
+library(readxl)
 library(rgdal)
-#### IMPORT/EXPORT RAW DATA FROM GOOGLE EARTH ####
+library(lubridate)
+library(tidyr)
+library(broom)
+
+## Plots
+library(ggplot2)
+library(maps)
+library(scales)
+library(ggthemes)
+library(ggpubr)
+library(gstat)
+library(markdown)
+library(ggtext)
+library(patchwork)
+library(egg)
+library(zoo)
+
+## Data download
+library(dataRetrieval)
+
+## Analysis
+library(glmnet)
+library(Hmisc)
+
+#### iii. SET DIRECTORIES ####
+# Set root directory
 wd_root <- getwd()
-wd_imports <- paste0(wd_root, '/imports/')
+
+# Imports folder (store all import files here)
+wd_imports <- paste0(wd_root,"/imports/")
+# Exports folder (save all figures, tables here)
+wd_exports <- paste0(wd_root,"/exports/")
+
+wd_figures <- paste0(wd_root, "/figures/")
+
+# Subfolders for files
 wd_mining_mapping_import_folder <- paste0(wd_imports, 'mining_river_profiles/')
 wd_mining_mapping_folder <- paste0(wd_imports, 'mining_data_for_earth_engine/')
+wd_landsat_data <- paste0(wd_imports,'landsat_data_from_earth_engine/')
+wd_oil_palm_subfolder <- paste0(wd_imports, 'oil_palm_and_mining_rivers_ssc_data/')
+
+# Create folders within root directory to organize outputs if those folders do not exist
+export_folder_paths <- c(wd_imports, wd_exports, wd_figures,
+                         wd_mining_mapping_import_folder, wd_mining_mapping_folder,
+                         wd_landsat_data, wd_oil_palm_subfolder)
+
+for(i in 1:length(export_folder_paths)){
+  path_sel <- export_folder_paths[i]
+  if(!dir.exists(path_sel)){
+    # dir.create(path_sel)
+    print(paste0('create: ', path_sel))
+  }else{
+    print(paste0('already exists: ', path_sel))
+  }
+}
+
+#### 1. IMPORT/EXPORT RAW DATA FROM GOOGLE EARTH ####
 ## Export for Google Earth Engine
+## **Careful: if files already exist, this will overwrite them**.
+## Choose a new output name or move previous file to avoid overwriting.
+## Can also add argument: `overwrite_layer = FALSE` to `writeOGR`.
 
-# First Transect Batch
-glasgm_transects_import <- readOGR(paste0(wd_mining_mapping_import_folder, 'asgm-global-transects.kml'))
-writeOGR(glasgm_transects_import, dsn = './mining_data_for_earth_engine/glasgm_transects_import', layer = 'glasgm_transects_import', driver = 'ESRI Shapefile')
+#### 1A. RIVER PROFILES FOR SSC TIMESERIES ANALYSIS ####
+## Import full metadata
+profile_metadata <- data.table(read_excel(paste0(wd_imports,'agm-profile-metadata.xlsx'), sheet = 'profile_data'))
+profile_reference_metadata <- data.table(read_excel(paste0(wd_imports,'agm-profile-metadata.xlsx'), sheet = 'reference_profiles'))
 
-# Second Transect Batch
-glasgm_transects_import <- readOGR(paste0(wd_mining_mapping_import_folder,'asgm-global-transects-2.kml'))
-writeOGR(glasgm_transects_import, dsn = './mining_data_for_earth_engine/glasgm_transects_import_2', layer = 'glasgm_transects_import_2', driver = 'ESRI Shapefile')
-# Third Transect Batch
-glasgm_transects_import <- readOGR(paste0(wd_mining_mapping_import_folder,'agm-global-transects-3.kml'))
-writeOGR(glasgm_transects_import, dsn = './mining_data_for_earth_engine/glasgm_transects_import_3', layer = 'glasgm_transects_import_3', driver = 'ESRI Shapefile')
+profile_names_ids <- rbind(profile_metadata[,.(`Profile id`, `Profile name`)],
+                           profile_reference_metadata[,.(`Profile id`, `Profile name`)],
+                           use.names = T)
+## Import all river profiles from each sub-file
+## Write to shapefile
+all_profile_files <- list.files(wd_mining_mapping_import_folder, pattern = 'river_mining_global_profiles')
 
-# Fourth Transect Batch
-glasgm_transects_import <- readOGR(paste0(wd_mining_mapping_import_folder,'agm-global-transects-4.kml'))
-writeOGR(glasgm_transects_import, dsn = './mining_data_for_earth_engine/glasgm_transects_import_4', layer = 'glasgm_transects_import_4', driver = 'ESRI Shapefile')
+for(i in 1:length(all_profile_files)){
+  if(i == 1){unmatched_count <- 0}
+  profile_file_sel <- all_profile_files[i] # path to selected file
+  profile_file_write <- gsub('.kml', '', profile_file_sel) # folder to write
+  # Import
+  river_mining_profiles_import <- readOGR(
+                    paste0(wd_mining_mapping_import_folder, profile_file_sel))
+  profile_ids <- data.table(`Profile id` = river_mining_profiles_import@data[["Name"]])
+  
+  profile_ids <- profile_ids[,':='(order = 1:nrow(profile_ids))]
+  profile_ids_merge <- merge(profile_ids, 
+                             profile_names_ids,
+                       by = 'Profile id',
+                       all.x = T)[order(order)]
+  
+  unmatched_profiles_sel <- profile_ids_merge[is.na(`Profile name`), .(`Profile id`)]
+  
+  if(nrow(unmatched_profiles_sel) > 0 & unmatched_count == 0){
+    unmatched_profiles <- unmatched_profiles_sel
+    unmatched_count <- nrow(unmatched_profiles)
+  }else if(nrow(unmatched_profiles_sel) > 0){
+    unmatched_profiles <- rbind(unmatched_profiles, unmatched_profiles_sel, use.names = T)
+    unmatched_count <- unmatched_count + nrow(unmatched_profiles)
+  }
+     
+  profile_ids_merge <- profile_ids_merge[,':='(`Profile name` = 
+                                                 ifelse(is.na(`Profile name`),
+                                                        `Profile id`, `Profile name`))]
+  
+  # Change name from profile ID to profile name
+  # Add property for profile ID
+  river_mining_profiles_import@data[["Name"]] <- profile_ids_merge$`Profile name`
+  river_mining_profiles_import@data[["Profile id"]] <- profile_ids_merge$`Profile id`
+  
+  # Export
+  writeOGR(river_mining_profiles_import, dsn = paste0(wd_mining_mapping_folder, profile_file_write), 
+           layer = profile_file_write, driver = 'ESRI Shapefile', overwrite_layer = T)
+  
+}
 
-# Fifth Transect Batch
-glasgm_transects_import <- readOGR(paste0(wd_mining_mapping_import_folder,'agm-global-transects-5.kml'))
-writeOGR(glasgm_transects_import, dsn = './mining_data_for_earth_engine/glasgm_transects_import_5', layer = 'glasgm_transects_import_5', driver = 'ESRI Shapefile')
+# Save unmatched profile names to filee
+fwrite(unmatched_profiles, file = paste0(wd_mining_mapping_import_folder, 'unmatched_profiles.csv'))
 
-# SIXTH Transect Batch
-glasgm_transects_import <- readOGR(paste0(wd_mining_mapping_import_folder,'agm-global-transects-6.kml'))
-writeOGR(glasgm_transects_import, dsn = './mining_data_for_earth_engine/glasgm_transects_import_6', layer = 'glasgm_transects_import_6', driver = 'ESRI Shapefile')
-
-# Seventh Transect Batch
-glasgm_transects_import <- readOGR(paste0(wd_mining_mapping_import_folder,'agm-global-transects-7.kml'))
-writeOGR(glasgm_transects_import, dsn = './mining_data_for_earth_engine/glasgm_transects_import_7', layer = 'glasgm_transects_import_7', driver = 'ESRI Shapefile')
-
-# Seventh Transect Batch
-glasgm_transects_import <- readOGR(paste0(wd_mining_mapping_import_folder,'agm-global-transects-8.kml'))
-writeOGR(glasgm_transects_import, dsn = './mining_data_for_earth_engine/glasgm_transects_import_8', layer = 'glasgm_transects_import_8', driver = 'ESRI Shapefile')
-
+#### 1B. MINING-EXTENT POLYGONS FOR SMALL RIVER ANALYSIS ####
 # Mining area polygons
-glasgm_polygons_import <- readOGR(paste0(wd_mining_mapping_import_folder,'ASGM_global_polygons_20230404.kml'))
-writeOGR(glasgm_polygons_import, dsn = paste0(wd_mining_mapping_folder, '/ASGM_global_polygons_20230404'), layer = 'ASGM_global_polygons_20230404', driver = 'ESRI Shapefile')
+river_mining_polygons_import <- readOGR(paste0(wd_mining_mapping_import_folder,'ASGM_global_polygons_20230404.kml'))
+writeOGR(river_mining_polygons_import, dsn = paste0(wd_mining_mapping_folder, '/ASGM_global_polygons_20230404'), 
+         layer = 'ASGM_global_polygons_20230404', driver = 'ESRI Shapefile', overwrite_layer = T)
 
