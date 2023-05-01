@@ -48,6 +48,7 @@ global-asgm-exports/
 writing/
 global-asgm-imports/
 *.zip
+visuals/Images_for_mining_paper
 
 # Readme output
 README.html

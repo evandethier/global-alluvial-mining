@@ -141,6 +141,11 @@ asgm_river_landsat_pred <- fread(paste0(wd_imports, 'asgm_river_landsat_pred.csv
 
 # Import SSC data (derived from landsat)
 ssc_ma_timeseries <- fread(paste0(wd_imports,'river_mining_ssc_ma_timeseries.csv'))
+
+# Import site metadata
+site_metadata <- data.table(read_excel(paste0(wd_imports,'agm-profile-metadata.xlsx')))
+profile_metadata <- data.table(read_excel(paste0(wd_imports,'agm-profile-metadata.xlsx'), sheet = 'profile_data'))
+
 # All mining locations
 # All locations
 glasgm_locations_import <- readOGR(paste0(wd_imports,'ASGM_global_sites_10232022.kml'))
@@ -150,10 +155,6 @@ writeOGR(glasgm_locations_import, dsn = paste0(wd_mining_mapping_folder, 'glasgm
 global_asgm_datatable_import <- data.table(data.frame(glasgm_locations_import))[
   ,':='(Latitude = coords.x2, Longitude = coords.x1)
 ][,.(Latitude, Longitude, Name)]
-
-# Import site metadata
-site_metadata <- data.table(read_excel(paste0(wd_imports,'agm-profile-metadata.xlsx')))
-profile_metadata <- data.table(read_excel(paste0(wd_imports,'agm-profile-metadata.xlsx'), sheet = 'profile_data'))
 
 # Import topographic data for river profiles (distance, elevation, drainage area)
 # Import river topographic profile data for each batch of mining sites

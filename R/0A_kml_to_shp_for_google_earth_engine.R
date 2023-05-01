@@ -73,6 +73,10 @@ profile_reference_metadata <- data.table(read_excel(paste0(wd_imports,'agm-profi
 profile_names_ids <- rbind(profile_metadata[,.(`Profile id`, `Profile name`)],
                            profile_reference_metadata[,.(`Profile id`, `Profile name`)],
                            use.names = T)
+
+# Import site metadata
+site_metadata <- data.table(read_excel(paste0(wd_imports,'agm-profile-metadata.xlsx')))
+
 ## Import all river profiles from each sub-file
 ## Write to shapefile
 all_profile_files <- list.files(wd_mining_mapping_import_folder, pattern = 'river_mining_global_profiles')
@@ -126,3 +130,41 @@ river_mining_polygons_import <- readOGR(paste0(wd_mining_mapping_import_folder,'
 writeOGR(river_mining_polygons_import, dsn = paste0(wd_mining_mapping_folder, '/ASGM_global_polygons_20230404'), 
          layer = 'ASGM_global_polygons_20230404', driver = 'ESRI Shapefile', overwrite_layer = T)
 
+#### 2. RIVER MINING SITES ####
+
+# All mining locations
+# All locations
+glasgm_locations_import <- readOGR(paste0(wd_imports,'ASGM_global_sites_10232022.kml'))
+writeOGR(glasgm_locations_import, dsn = paste0(wd_mining_mapping_folder, 'glasgm_locations_import'), 
+         layer = 'glasgm_locations_import', driver = 'ESRI Shapefile', overwrite_layer = T)
+
+site_names_ids <- site_metadata[,.(`ID_ref`, `AGM district name`)]
+
+site_ids <- data.table(`AGM district name` = glasgm_locations_import@data[["Name"]])
+
+site_ids <- site_ids[,':='(`AGM district name` = gsub('yrgystan', 'yrgyzstan', `AGM district name`))]
+site_ids <- site_ids[,':='(`AGM district name` = gsub('hillipin', 'hilippin', `AGM district name`))]
+site_ids <- site_ids[,':='(`AGM district name` = gsub('hillippin', 'hilippin', `AGM district name`))]
+
+site_ids <- site_ids[,':='(order = 1:nrow(site_ids))]
+site_ids_merge <- merge(site_ids, 
+                        site_names_ids,
+                        by = 'AGM district name',
+                        all.x = T)[order(order)]
+
+unmatched_sites_sel <- site_ids_merge[is.na(ID_ref), .(`AGM district name`)]
+
+
+site_ids_merge <- site_ids_merge[,':='(ID_ref = 
+                                         ifelse(is.na(ID_ref),
+                                                `AGM district name`, ID_ref))]
+
+# Change name from site ID to site name
+# Add property for site ID
+glasgm_locations_import@data[["Name"]] <- site_ids_merge$ID_ref
+glasgm_locations_import@data[["ID_ref"]] <- site_ids_merge$ID_ref
+glasgm_locations_import@data[["site_name"]] <- site_ids_merge$`AGM district name`
+
+writeOGR(glasgm_locations_import, 
+         dsn = paste0(wd_imports, 'supplementary_data_kml_and_excel/', 'river_mining_global_sites_20230501.kml'), 
+         layer = 'river_mining_global_sites_20230501', driver = 'KML', overwrite_layer = T)
