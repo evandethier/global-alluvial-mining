@@ -63,7 +63,7 @@ The code for this analysis is stored in this repository. Source data from Landsa
 
 **Source data**
 
-[Zenodo repository: mining locations, unprocessed Landsat data, other source data](https://10.5281/zenodo.7699122)  
+[Zenodo repository: mining locations, unprocessed Landsat data, other source data](https://zenodo.org/record/7699122#.ZE9Hey-B3RY)  
 
 [Source data, not including unprocessed Landsat data](https://github.com/evandethier/global-alluvial-mining/tree/main/global-asgm-imports)  
 
