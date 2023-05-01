@@ -73,7 +73,7 @@ The code for this analysis is stored in this repository. Source data from Landsa
 
 **Code to run**
 
-[Import data](R/1_initial_data_proceessing.R)  
+[Import data](R/1_initial_data_processing.R)  
 
 [Analyze river mining data](R/2_river_mining_analysis.R)  
 
