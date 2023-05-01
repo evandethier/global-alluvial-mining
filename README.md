@@ -59,7 +59,7 @@ We built on our past work [^2][^3] and used Landsat satellite imagery to estimat
 * * *
 
 #### Data and code for this analysis
-The code for this analysis is stored in this repository. Source data from Landsat and produced by us can be downloaded from this github page. All necessary data is here, except for unprocessed Landsat data, which is stored in the Zenodo repository:
+The code for this analysis is stored in this repository. Source data from Landsat and produced by us can be downloaded from this github page. All necessary data is here, except for unprocessed kml Landsat data, which is stored in the Zenodo repository and on Google Earth Engine:
 
 **Source data**
 
@@ -67,19 +67,19 @@ The code for this analysis is stored in this repository. Source data from Landsa
 
 [Source data, not including unprocessed Landsat data](https://github.com/evandethier/global-alluvial-mining/tree/main/global-asgm-imports)  
 
-[Convert mining location kmls to shapefiles](https://github.com/evandethier/global-alluvial-mining/blob/main/kml_to_shp_for_google_earth_engine.R)  
+[Convert mining location kmls to shapefiles](R/0A_kml_to_shp_for_google_earth_engine.R)  
 
 <br>
 
 **Code to run**
 
-[Import data](https://github.com/evandethier/global-alluvial-mining/blob/main/global-asgm-import.R)  
+[Import data](1_initial_data_proceessing.R)  
 
-[Analyze river mining data](https://github.com/evandethier/global-alluvial-mining/blob/main/global-river-mining-analysis.R)  
+[Analyze river mining data](R/2_river_mining_analysis.R)  
 
-[Analysis of oil palm impacts (need to run initial river mining analysis first)](https://github.com/evandethier/global-alluvial-mining/blob/main/oil_palm_sub_analysis.R)  
+[Analysis of oil palm impacts (need to run initial river mining analysis first)](R/3_oil_palm_sub_analysis.R)  
 
-[Analyze rivers that are too small for Landsat mapping](https://github.com/evandethier/global-alluvial-mining/blob/main/river-mining-tstm-length-analysis.R)  
+[Analyze rivers that are too small for Landsat mapping](R/small_river_analysis.R)  
 
 ***
 
