@@ -1,0 +1,272 @@
+{\rtf1\ansi\ansicpg1252\cocoartf2639
+\cocoatextscaling0\cocoaplatform0{\fonttbl\f0\fswiss\fcharset0 Helvetica;}
+{\colortbl;\red255\green255\blue255;}
+{\*\expandedcolortbl;;}
+\margl1440\margr1440\vieww11520\viewh8400\viewkind0
+\pard\tx720\tx1440\tx2160\tx2880\tx3600\tx4320\tx5040\tx5760\tx6480\tx7200\tx7920\tx8640\pardirnatural\partightenfactor0
+
+\f0\fs24 \cf0 // https://code.earthengine.google.com/?scriptPath=users%2Fedethier%2Fmining%3A2_mining_small_channels\
+\
+//// i. INITIALIZE ////\
+var selected_river_name = 'myanmar_sittang_gold'\
+var scale_sel = 90 // scale to compute river length\
+\
+//// 1. IMPORT DATA ////\
+// MERIT Hydro image\
+var merit = ee.Image("MERIT/Hydro/v1_0_1")\
+var width = merit.select('wth')\
+// WWF river polygons\
+var rivers = ee.FeatureCollection("WWF/HydroSHEDS/v1/FreeFlowingRivers")\
+\
+// Biomass\
+var carbon = ee.ImageCollection("WCMC/biomass_carbon_density/v1_0")\
+var canopy = ee.ImageCollection("LARSE/GEDI/GEDI02_A_002_MONTHLY")\
+\
+Map.addLayer(carbon,\{min:0, max: 200, palette:['black','grey','green','white']\}, 'carbon')\
+// Import mining profiles\
+var mining_profiles = ee.FeatureCollection([\
+          ee.FeatureCollection('projects/ee-edethier-river-mining/assets/river_mining_global_profiles_1'),\
+          ee.FeatureCollection('projects/ee-edethier-river-mining/assets/river_mining_global_profiles_2'),\
+          ee.FeatureCollection('projects/ee-edethier-river-mining/assets/river_mining_global_profiles_3'),\
+          ee.FeatureCollection('projects/ee-edethier-river-mining/assets/river_mining_global_profiles_4'),\
+          ee.FeatureCollection('projects/ee-edethier-river-mining/assets/river_mining_global_profiles_5'),\
+          ee.FeatureCollection('projects/ee-edethier-river-mining/assets/river_mining_global_profiles_6')])\
+          .flatten()\
+\
+// Import mining polygons\
+// var mining_polys = ee.FeatureCollection('projects/ee-edethier-river-mining/assets/river_mining_polys_20221012')\
+// var mining_polys = ee.FeatureCollection('projects/ee-edethier-river-mining/assets/river_mining_polys_20221104')\
+var mining_polys = ee.FeatureCollection('projects/ee-edethier-river-mining/assets/ASGM_global_polygons_20230404')\
+      .map(function(feature)\{\
+        var area_km2 = ee.Number(feature.geometry().area()).divide(1e6)\
+        var site_no_spec = feature.get('Name')\
+        var site_no = ee.String(site_no_spec).replace('_[0-9]+$', '')\
+        var profile_id = feature.get('Proflid')\
+      return(ee.Feature(feature.geometry())\
+                    .set('area_km2', area_km2,\
+                         'site_no_spec', site_no_spec,\
+                         'site_no', site_no,\
+                         'Profile Id', profile_id))\
+      \})\
+      \
+\
+print('mining profile ex.', mining_profiles.first())\
+print('mining poly ex.', mining_polys.first())\
+print('mining area (hectares)', mining_polys.aggregate_sum('area_km2').multiply(100))\
+\
+// Bounding geometry\
+var bounding_geometry = \
+    ee.Geometry.Polygon(\
+        [[[113.72863591541797, -1.0714959981797396],\
+          [113.72863591541797, -1.7277296688083073],\
+          [114.05547917713672, -1.7277296688083073],\
+          [114.05547917713672, -1.0714959981797396]]], null, false);\
+\
+//// 2. FILTER TO JUST SMALL RIVERS ////\
+// Just small rivers\
+// Use flow direction to get diagonal vs. horizontal\
+// (that allows for accurate length calculation)\
+var small_rivers_img = merit.select('dir')\
+                          .remap([1, 4, 16, 64, 2, 8, 32, 128], [1, 1, 1, 1, 1.41, 1.41, 1.41, 1.41])\
+                          .updateMask(merit.select('upa').gt(0.07))\
+                          .updateMask(width.gt(50).unmask(0).not())\
+\
+//// 3. CALCULATE LENGTH FOR EACH MINING AREA ////\
+// Small river length for each mining polygon\
+var small_river_length = small_rivers_img\
+    .reduceRegions(\{\
+      collection: mining_polys\
+      // .filterBounds(test_geometry)\
+      .map(function(feature)\{\
+        return(feature.setGeometry(feature.geometry().buffer(90)))\
+      \}),\
+      reducer: ee.Reducer.sum(),\
+      scale: scale_sel, \
+      crs: merit.projection()\
+    \}).map(function(feature)\{\
+      // Convert number of river pixels to length\
+      var length_km = ee.Number(feature.get('sum')).multiply(scale_sel).divide(1e3)\
+      return(feature.setGeometry(null).set('length_km', length_km))\
+    \})\
+\
+var small_river_pixels = small_river_length.aggregate_sum('sum')\
+var small_river_length_total = small_river_pixels.multiply(90).divide(1e3)\
+\
+//// 4. EXPORT LENGTH DATA FOR EACH MINING AREA ////\
+Export.table.toDrive(\{\
+  collection: small_river_length,\
+  description: 'mining_on_small_rivers_length',\
+  fileNamePrefix: 'mining_on_small_rivers_length',\
+  fileFormat: 'CSV'\
+\})\
+\
+print('length test', small_river_length.limit(10))\
+print('small river pixels', small_river_pixels)\
+print('small river length (km)', small_river_length_total)\
+\
+//// 5. ADD LAYERS TO THE MAP ////\
+// Add width and upstream area images to the map       \
+var selected_river = mining_polys.filter(ee.Filter.eq('site_no', selected_river_name))\
+// Map.centerObject(selected_river, 12)\
+Map.addLayer(selected_river, \{\}, 'near rivers')\
+Map.addLayer(ee.Image(0), \{min: 0, max: 0\}, 'blank image')\
+Map.addLayer(width.updateMask(width.gt(50)), \
+            \{min: 50, max: 300, palette: ['black','navy','blue']\}, 'width', 0)\
+Map.addLayer(merit.select('upa').updateMask(merit.select('upa').gt(1)), \
+            \{min: 10, max: 50, palette: ['black','navy','blue']\}, 'small width', 0)\
+Map.addLayer(merit.select('upa').gt(0.1).selfMask(), \{\}, 'upstream area', 0)\
+// Add mining polygons to the map \
+Map.addLayer(small_river_length, \{\}, 'mining polygons')\
+\
+//// 6. EXPORT SMALL RIVERS AS KML ////\
+var small_river_vectors = merit.select('upa').gt(1).selfMask()\
+                .reduceToVectors(\{\
+                  geometry: bounding_geometry,\
+                  scale: 30,\
+                  eightConnected: true\
+                \})\
+                \
+Map.addLayer(small_river_vectors.limit(10), \{\}, 'vectors')\
+Export.table.toDrive(\{\
+  collection: small_river_vectors,\
+  fileNamePrefix: selected_river_name + '_small_rivers_vectors',\
+  description: 'small_river_vectors_export',\
+  fileFormat: 'KML'\
+\})\
+\
+//// 7. FILTER TO ONLY INCLUDE LARGE RIVERS ////\
+// Select only wide rivers (> 50 m)\
+var wide_rivers = width.updateMask(width.gte(50)).int()\
+// Filter river feature collection to only large rivers in the tropics\
+var tropical_rivers_1000km2 = rivers\
+                                .filter(ee.Filter.gt('UPLAND_SKM', 1000))\
+                                .map(function(feature)\{\
+                                  var lat = ee.Number(feature.geometry().centroid().coordinates().get(1))\
+                                  var tropics = lat.lt(23.43639).and(lat.gt(-23.43639))\
+                                  return feature.set('tropics', tropics)\
+                                \})\
+                                .map(function(feature)\{\
+                                  var width = wide_rivers.reduceRegion(\{\
+                                    geometry: feature.geometry().buffer(2000),\
+                                    reducer: ee.Reducer.mean()\
+                                  \}).get('wth')\
+                                  return(feature.set('width', width))\
+                                \})\
+                                .filter(ee.Filter.eq('tropics', 1))\
+                                \
+// Filter river feature collection to only large rivers                               \
+var rivers_1000km2 = rivers\
+                                .filter(ee.Filter.gt('UPLAND_SKM', 1000))\
+                                .map(function(feature)\{\
+                                  var lat = ee.Number(feature.geometry().centroid().coordinates().get(1))\
+                                  var tropics = lat.lt(23.43639).and(lat.gt(-23.43639))\
+                                  return feature.set('tropics', tropics)\
+                                \})\
+                                .map(function(feature)\{\
+                                  var width = wide_rivers.reduceRegion(\{\
+                                    geometry: feature.geometry().buffer(2000),\
+                                    reducer: ee.Reducer.mean()\
+                                  \}).get('wth')\
+                                  return(feature.set('width', width))\
+                                \})\
+\
+var wide_tropical_rivers = tropical_rivers_1000km2\
+                                    .filter(ee.Filter.gt('width', 60))\
+                                    .filter(ee.Filter.gt('LENGTH_KM', 0))\
+                                    \
+var wide_rivers = rivers_1000km2\
+                                    .filter(ee.Filter.gt('width', 60))\
+                                    .filter(ee.Filter.gt('LENGTH_KM', 0))\
+\
+//// 8. SELECT RIVERS JUST FROM TROPICAL COUNTRIES ////\
+// Identify tropical countries from river dataset\
+var tropical_countries = wide_tropical_rivers.aggregate_array('COUNTRY').distinct()\
+\
+// Identify mining countries using overlap of mining profile dataset and river dataset\
+var mining_rivers = rivers\
+                        .filterBounds(mining_profiles)\
+\
+//// 9. GET RIVER METADATA (COUNTRY, BASIN) ////\
+// Get country and continent metadata from mining rivers\
+var mining_rivers_metadata = mining_profiles.map(function(feature)\{\
+  var site_no_sel = feature.get('Name')\
+  var profile_id = feature.get('Proflid')\
+  var rivers_sel = rivers.filterBounds(feature.geometry())\
+  // var countries_sel = mining_rivers.aggregate_array('COUNTRY').distinct()\
+  var country_basin_sel = rivers_sel.select(['COUNTRY', 'BAS_NAME']).distinct(['COUNTRY', 'BAS_NAME'])\
+  var ft_river_country = country_basin_sel.map(function(feature)\{\
+    return(feature.set('site_no', site_no_sel, 'Profile Id', profile_id))\
+  \})\
+  return(ft_river_country)\
+\}).flatten()\
+\
+Export.table.toDrive(\{\
+  collection: mining_rivers_metadata,\
+  description: 'mining_rivers_metadata',\
+  fileNamePrefix: 'mining_rivers_country_basin',\
+  fileFormat: 'CSV',\
+  folder: 'global-agm'\
+\})\
+print('Mining river metadata', mining_rivers_metadata.limit(10))\
+var mining_countries = mining_rivers.aggregate_array('COUNTRY').distinct()\
+\
+print('Unique mining countries', mining_countries)\
+\
+Map.addLayer(mining_rivers, \{color: 'purple'\}, 'mining rivers')                        \
+\
+// print('Unique countries', tropical_countries)\
+\
+// var tropical_countres = ['Peru', 'Ghana']\
+\
+//// 10. CALCULATE RIVER LENGTH IN EACH COUNTRY ////\
+// Get river length by country (function)\
+var get_river_lengths = function(list)\{\
+  var river_length = wide_tropical_rivers\
+                .filter(ee.Filter.eq('COUNTRY', ee.String(list)))\
+                .aggregate_sum('LENGTH_KM')\
+  return(ee.Feature(null).set('river_km', river_length, 'country', ee.String(list)))\
+\}\
+\
+// Get mining river length by country (function)\
+var get_mining_river_lengths = function(list)\{\
+  var river_length = wide_rivers\
+                .filter(ee.Filter.eq('COUNTRY', ee.String(list)))\
+                .aggregate_sum('LENGTH_KM')\
+  return(ee.Feature(null).set('river_km', river_length, 'country', ee.String(list)))\
+\}\
+\
+// Apply functions to calculate total and mining river length\
+var river_lengths_by_country = tropical_countries.map(get_river_lengths)\
+var river_lengths_by_mining_country = mining_countries.map(get_mining_river_lengths)\
+   \
+   \
+//// 11. EXPORT RIVER LENGTHS FOR EACH COUNTRY ////\
+Export.table.toDrive(\{\
+  collection: ee.FeatureCollection(river_lengths_by_country),\
+  description: 'river_lengths_by_country',\
+  fileNamePrefix: 'river_lengths_by_country_1000km2_50m_wide',\
+  fileFormat: 'csv',\
+  folder: 'global-agm'\
+\})\
+\
+Export.table.toDrive(\{\
+  collection: ee.FeatureCollection(river_lengths_by_mining_country),\
+  description: 'river_lengths_by_mining_country',\
+  fileNamePrefix: 'river_lengths_by_mining_country_1000km2_50m_wide',\
+  fileFormat: 'csv',\
+  folder: 'global-agm'\
+\})\
+\
+// Map.addLayer(width, \{\}, 'width')                              \
+Map.addLayer(wide_rivers, \{\}, 'wide rivers raster')                              \
+// Map.addLayer(tropical_rivers_1000km2, \{\}, 'rivers')\
+Map.addLayer(wide_tropical_rivers, \{color: 'red'\}, 'wide rivers')\
+\
+//// 12. EXPORT RIVER CHANNELS TO KML ////\
+Export.table.toDrive(\{\
+  collection: mining_profiles.select(['Name', 'Profile Id']),\
+  fileNamePrefix: 'river_mineral_mining_profiles_2022',\
+  description: 'river_mineral_mining_profiles_2022',\
+  fileFormat: 'kml',\
+  folder:'global_alluvial_mining'\
+\})}

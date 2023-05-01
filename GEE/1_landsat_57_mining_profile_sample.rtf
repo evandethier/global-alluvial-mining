@@ -1,0 +1,284 @@
+{\rtf1\ansi\ansicpg1252\cocoartf2639
+\cocoatextscaling0\cocoaplatform0{\fonttbl\f0\fswiss\fcharset0 Helvetica;}
+{\colortbl;\red255\green255\blue255;}
+{\*\expandedcolortbl;;}
+\margl1440\margr1440\vieww11520\viewh8400\viewkind0
+\pard\tx720\tx1440\tx2160\tx2880\tx3600\tx4320\tx5040\tx5760\tx6480\tx7200\tx7920\tx8640\pardirnatural\partightenfactor0
+
+\f0\fs24 \cf0 // https://code.earthengine.google.com/?scriptPath=users%2Fedethier%2Fmining%3A1_landsat_57_mining_profile_sample\
+\
+// Evan Dethier\
+// Longitudinal profile(s) segmented sampling\
+// Spring 2019, Dartmouth College\
+// use only with permission\
+\
+//// 1. INITIALIZE PARAMETERS, IMPORT PROFILE(S) AND IMAGERY ////\
+// Select profile (1-6)\
+var profile_num = 1\
+// Set necessary date, threshold parameters\
+var start1 = '1984-01-01';\
+var end1 = '2023-01-01';\
+// var nd_thresh = -0.4; // madre de dios\
+var nd_thresh = 0; // southwest usa (and safe for global analysis)\
+var interval = 2000; // Profile segmenting length (in meters)\
+\
+// Landsat images (Need to update script to incorporate new T1 L2 collection)\
+var ls5 = ee.ImageCollection("LANDSAT/LT05/C01/T1_SR")\
+var ls7 = ee.ImageCollection("LANDSAT/LE07/C01/T1_SR")\
+var ls8 = ee.ImageCollection("LANDSAT/LC08/C01/T1_SR")\
+\
+// Flow data\
+var elevation = ee.Image("WWF/HydroSHEDS/15CONDEM")\
+var flow_acc = ee.Image("WWF/HydroSHEDS/15ACC")\
+var fil = ee.Image("WWF/HydroSHEDS/03VFDEM")\
+    \
+// Add elevation, water data to map\
+Map.addLayer(elevation,\{min:100, max:300\},'elevation');\
+Map.addLayer(fil,\{min:100,max:300\},'fil');\
+Map.addLayer(flow_acc.updateMask(flow_acc.gt(100000)))\
+\
+// Global AGM\
+// Profile batch 1-6\
+var global_agm_profiles = ee.FeatureCollection([\
+          ee.FeatureCollection('projects/ee-edethier-river-mining/assets/river_mining_global_profiles_1').set('num',1),\
+          ee.FeatureCollection('projects/ee-edethier-river-mining/assets/river_mining_global_profiles_2').set('num',2),\
+          ee.FeatureCollection('projects/ee-edethier-river-mining/assets/river_mining_global_profiles_3').set('num',3),\
+          ee.FeatureCollection('projects/ee-edethier-river-mining/assets/river_mining_global_profiles_4').set('num',4),\
+          ee.FeatureCollection('projects/ee-edethier-river-mining/assets/river_mining_global_profiles_5').set('num',5),\
+          ee.FeatureCollection('projects/ee-edethier-river-mining/assets/river_mining_global_profiles_6').set('num',6)])\
+ \
+\
+var global_agm_profiles = ee.FeatureCollection(\
+  global_agm_profiles.filter(ee.Filter.eq('num', profile_num)).flatten()\
+  )\
+print(global_agm_profiles)\
+// Function to set name (this depends on input profiles metadata). \
+// Replace feature.get('XXXX') with whatever unique ID is in profile\
+var setName = function(feature)\{\
+  return(feature.set('name', feature.get('Name'),\
+                     'Profile Id', feature.get('Proflid')))\
+\}\
+\
+// Apply name to profiles\
+var profiles = global_agm_profiles\
+                  .map(setName)\
+\
+// Quality check for profiles (make sure they have names, look correct on map)\
+print('profiles', profiles)\
+Map.addLayer(profiles,\{\},'profiles')\
+\
+//// 2. CUT LONG profileS INTO SHORTER SEGMENTS ////\
+\
+// buffer feature function\
+var featureBuffer = function(feature)\{\
+  return feature.setGeometry(feature.geometry().buffer(200).simplify(20));\
+\};\
+var featureBuffer2000 = function(feature)\{\
+  return feature.setGeometry(feature.geometry().buffer(2000).simplify(20));\
+\};\
+\
+// Function to create geometry from list\
+var geom_from_list = function(list)\{\
+  var feature = ee.Feature(ee.Geometry(list));\
+  return feature;\
+\};\
+\
+// Function to get segment distance from profile beginning\
+var getDistance = function(feature)\{\
+  var feature_id = feature.id()\
+  var distance_km = ee.Number.parse(feature_id).multiply(interval).divide(1000)\
+  return(feature.set('distance_km', distance_km))\
+\}\
+\
+// Function to add coordinates of first node in segment (lat, lon) to feature (simplifies geometry, saves space)\
+var addCoords = function(feature)\{ \
+    var first_point = ee.List(feature.geometry().coordinates().get(0))\
+    return feature.set('lon',ee.List(first_point).get(0),'lat',ee.List(first_point).get(1))\}\
+      \
+// Functions to cut input profiles into shorter segments\
+var segment_fc = function(feature)\{\
+  var length = feature.geometry().length() // Length of feature\
+  var name = feature.get('name') // Name of feature\
+  var profile_id = feature.get('Profile Id')\
+  var addName = function(feature)\{\
+    return feature.set('name',name, \
+                       'Profile Id', profile_id)\} // Function to add name, ID to feature\
+  \
+  // Cut long profile geometry by specified interval\
+  var lines = ee.List(feature.cutLines(ee.List.sequence(0,length,interval)).geometry().geometries())\
+  \
+  // Make feature collection out of cut segments\
+  var features = ee.FeatureCollection(lines.map(geom_from_list))\
+                  .map(addName) // every segment gets assigned same profile name\
+                  .map(addCoords)\
+                  .map(getDistance)\
+  return features\
+\}\
+\
+// Apply segmenting function to each profile in input collection\
+// Result is a single collection of labeled short segments\
+var trainingSites = ee.FeatureCollection(profiles.map(segment_fc)).flatten().map(featureBuffer)\
+print('segments flat', ee.Feature(trainingSites.first()))\
+\
+Map.addLayer(trainingSites,\{\},'training sites')\
+\
+//// 3. IMPORT IMAGE COLLECTIONS (FROM LANDSAT 5 and 7) ////\
+\
+// Function to add date with specified format\
+var addDate = function(image)\{\
+    var date1 = ee.Date(image.get('system:time_start')).format('dd MMM yyyy');\
+    return image.set(\{'date': date1\})\
+ \};\
+ \
+// Function to mask out clouds, snow, etc.\
+var waterOnly = function(image)\{ \
+  var land = image.select('B7').lt(500)\
+  var cloudFinal = image.select('B1').add(image.select('B2'))\
+      .lt(5000) // usually .lt(3500), but not >>ssc, like white r. SD\
+  var qa = image.select('pixel_qa')\
+  var bitcloud = qa.bitwiseAnd(1 << 5)\
+          .and(qa.bitwiseAnd(1 << 7))\
+          .or(qa.bitwiseAnd(1 << 3))    \
+          .or(qa.bitwiseAnd(1 << 4))    \
+  var nd = image.normalizedDifference(['B5','B2'])\
+  return image.addBands(nd)\
+          .updateMask(cloudFinal)\
+          .updateMask(land)\
+          .updateMask(bitcloud.not())\
+          .updateMask(nd.lt(nd_thresh));\
+\};\
+\
+// Merge landsat 5 and 7 into single collection\
+// Get only water pixels for profile-overlapping images\
+var imgs = ls5.merge(ls7)\
+          .filterBounds(profiles)\
+          .filterDate(start1,end1)\
+          .map(waterOnly)\
+          .map(addDate) \
+          \
+// Number of images for each location\
+var count = imgs.reduce(ee.Reducer.count());\
+\
+//// 4. FUNCTIONS TO SAMPLE IMAGE WATER PIXELS AT EACH PROFILE SEGMENT ////\
+// Statistics we will do on each image\
+var reducers = ee.Reducer.median()\
+    // .combine(ee.Reducer.mean(), null, true)\
+    // .combine(ee.Reducer.stdDev(), null, true)\
+    .combine(ee.Reducer.count(), null, true);  \
+\
+// Function to sample images \
+var imgSample = function(image)\{\
+  var fc_export = image\
+  .reduceRegions(\{\
+  collection: trainingSites.filterBounds(image.geometry()),\
+  // collection: ee.FeatureCollection(ee.Feature(aoi.buffer(400))),\
+  reducer:reducers, \
+  // scale:30, \
+  \}).select('B1_median',\
+  'B2_median',\
+  'B3_median',\
+  'B4_median',\
+  'B5_median',\
+  'B6_median',\
+  'B7_median',\
+  'B2_count',\
+  'nd_median',\
+  'name', \
+  'Profile Id',\
+  'pixel_qa_median',\
+  'radsat_qa_median',\
+  'sr_atmos_opacity_median',\
+  'sr_cloud_qa_median',\
+  'lat',\
+  'lon',\
+  'distance_km'\
+  );\
+  return fc_export.map(function(feature)\{\
+    var date1 = ee.Date(image.get('system:time_start')).format('dd MMM yyyy');\
+    var feature = feature.setGeometry(null); // remove geometry from feature for efficiency\
+    return feature.set(\{'date':date1\})\
+  \})\
+  \
+\}\
+\
+//// 6. FUNCTIONS TO CALCULATE TOPOGRAPHIC DATA FOR EACH PROFILE SEGMENT ////\
+var topo_reducers = ee.Reducer.max()\
+      // .combine(ee.Reducer.mean(), null, true)\
+      // .combine(ee.Reducer.stdDev(), null, true)\
+      .combine(ee.Reducer.min(), null, true);\
+      \
+// Calculate maximum flow accumulation (drainage area) (river likely highest local drainage area)\
+// and minimum elevation (river likely lowest local point)\
+var topoExtract = function(image)\{\
+  var fc_export = image\
+    .reduceRegions(\{\
+    collection: trainingSites.map(featureBuffer2000),\
+    reducer:topo_reducers, \
+    scale:30, \
+    \}).select(\
+    'elev_min',\
+    'flow_acc_max',\
+    'name',\
+    'Profile Id',\
+    'lat',\
+    'lon'\
+    );\
+  return fc_export\
+    .map(function(feature)\{\
+    return feature = feature.setGeometry(null); // remove geometry from feature to reduce file size\
+  \})\
+\};\
+\
+\
+//// 7. APPLY IMAGE SAMPLE FUNCTIONS TO PROFILE SEGMENTS ////\
+var imgSample_fc = imgs.map(imgSample)\
+                            .flatten()\
+                            .filterMetadata('B2_count','greater_than',0)\
+\
+print('test image',imgSample_fc.first())\
+\
+//// 8. APPLY TOPOGRAPHIC FUNCTIONS TO PROFILE SEGMENTS ////\
+\
+var topoExtract = topoExtract(flow_acc.rename('flow_acc').addBands(fil.rename('elev')))\
+print('test topo',topoExtract.first())\
+\
+\
+//// 9. EXPORT RESULTS TO DRIVE ////\
+// Export image sample data to drive\
+Export.table.toDrive(\{\
+  collection: imgSample_fc, \
+  folder: 'landsat_data_from_earth_engine',\
+  description: 'global_agm_' + profile_num + '_ls57_rawBands_b7lt500',\
+  fileNamePrefix: 'global_agm_' + profile_num + '_ls57_rawBands_b7lt500',\
+  fileFormat:'csv'\
+  \})\
+// Export topographic data to drive\
+Export.table.toDrive(\{\
+  collection: topoExtract, \
+  folder: 'landsat_data_from_earth_engine',\
+  description: 'global_agm_profile_topo_' + profile_num, \
+  fileNamePrefix: 'global_agm_profile_topo_' + profile_num, \
+  fileFormat:'csv'\
+  \})\
+  \
+//// EXTRA. TO SAMPLE EVERY PIXEL INSTEAD OF TAKING MEDIAN ////\
+// instead of taking the median value of the pixels,\
+// makes a feature for each pixel and exports all of them\
+// as a feature collection\
+// this works, but it generates an insane number of pixels\
+// can only be applied for point sampling, not profile sampling\
+var pixelSample = function(image)\{\
+  var fc_export = image\
+          .sampleRegions(\{\
+            collection: trainingSites.filterBounds(image.geometry())\
+          \})\
+  return fc_export.map(function(feature)\{\
+    var date1 = ee.Date(image.get('system:time_start')).format('dd MMM yyyy');\
+    var feature = feature.setGeometry(null); // remove geometry from feature for efficiency\
+    return feature.set(\{'date':date1\})\
+  \})\
+  \
+\}\
+   \
+var riverSamples = imgs.map(pixelSample)\
+}
