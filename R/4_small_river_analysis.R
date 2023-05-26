@@ -149,7 +149,8 @@ site_metadata_all <- fread(paste0(wd_imports, 'rm_site_metadata.csv'))[
 ]
 
 # Small river length
-tstm_river_length <- fread(paste0(wd_river_lengths, 'mining_on_small_rivers_length_20230404.csv'))[
+# tstm_river_length <- fread(paste0(wd_river_lengths, 'mining_on_small_rivers_length_20230404.csv'))[
+tstm_river_length <- fread(paste0(wd_river_lengths, 'mining_on_small_rivers_length_20230513.csv'))[
   ,':='(
     site_no_spec = site_no,
     site_no = gsub(pattern = '_[0-9]+$', replace = '', x = site_no),
@@ -157,7 +158,7 @@ tstm_river_length <- fread(paste0(wd_river_lengths, 'mining_on_small_rivers_leng
     sum = NULL)][
       ,':='(site_no = ifelse(site_no == 'peru_rio_malinowski_middle_agm_region7', 'peru_rio_malinowski_middle_agm_region', site_no))
     ]
-
+carbon_by_site <- fread(paste0(wd_river_lengths, 'river_mineral_mining_carbon_2023.csv'))[,-c('.geo', 'mean')]
 # Correct typos in dataset
 tstm_river_length <- tstm_river_length[,':='(site_no = gsub('region7', 'region', site_no))]
 tstm_river_length <- tstm_river_length[,':='(site_no = gsub('kyrgystan', 'kyrgyzstan', site_no))]
@@ -228,9 +229,16 @@ tstm_area_boxplot <- ggplot(tstm_river_length_summary, aes(y = site_tstm, x = ar
 # Combine small and large river length tables
 # Remove all rows with sites that don't have small rivers mapped
 # If large river is too small to map (i.e., km_Nx is NA), make that 0
-small_river_length_meta <- merge(site_metadata_all, tstm_river_length_summary, 
-                                      all.y = T,
-                                        by.x = 'AGM district name', by.y = 'site_no')
+tstm_river_length_summary <- merge(
+  tstm_river_length_summary, 
+  carbon_by_site[,.(site_no, tons_C_per_ha)],
+  by = 'site_no')
+
+small_river_length_meta <- merge(site_metadata_all, 
+                                 tstm_river_length_summary, 
+                                 all.y = T,
+                                 by.x = 'AGM district name', 
+                                 by.y = 'site_no')
 
 
 small_and_large_river_length <- merge(small_river_length_meta, river_reaches_elevated_2020[
@@ -245,7 +253,8 @@ small_and_large_river_length <- small_and_large_river_length[
 ][
   ,.(km_Nx = mean(km_Nx, na.rm = T),
      small_river_length_km = sum(small_river_length_km, na.rm = T),
-     area_km2 = sum(area_km2, na.rm = T)
+     area_km2 = sum(area_km2, na.rm = T),
+     tons_C_per_ha =  mean(tons_C_per_ha, na.rm = T)
      ),
       by = .(site_no, profile_display_name, country_display, continent_display)][
     ,':='(km_Nx = ifelse(is.na(km_Nx), 0, km_Nx))][
@@ -255,6 +264,63 @@ small_and_large_river_length <- small_and_large_river_length[
   ][,':='(additional_small_river_fraction = total_river_km/km_Nx,
           site_tstm = ifelse(km_Nx == 0, 'Headwater sites', 'Large river sites'))]
 
+# Add tons of carbon
+small_and_large_river_length <- small_and_large_river_length[,':='(
+  tons_C = tons_C_per_ha * area_km2 * 100
+)]
+
+# Plot biomass
+tons_of_biomass_vs_area <- ggplot(small_and_large_river_length[!is.na(continent_display)],  
+       aes(x = area_km2, y = tons_C, fill = continent_display)) +
+  geom_point(size = 3, pch = 21, stroke = 0.5) +
+  season_facet + 
+  scale_x_log10(labels = fancy_scientific_modified) +
+  scale_y_log10(labels = fancy_scientific_modified) +
+  scale_fill_manual(values = c('#A66F8D','#395953','grey70', '#F2BC57','#D98841','#BF5349')) +
+  theme(legend.position = c(0.2, 0.85),
+        axis.title.x = element_markdown()) +
+  labs(x = 'Mining area (km<sup>2</sup>)',
+       y = 'Above- and below-ground biomass (tons)',
+       fill = 'Landmass')
+
+ggsave(tons_of_biomass_vs_area, filename = paste0(wd_figures, 'tons_of_biomass_vs_area.pdf'),
+       width = 6, height = 6, useDingbats = F)
+ggsave(tons_of_biomass_vs_area, filename = paste0(wd_figures, 'tons_of_biomass_vs_area.png'),
+       width = 6, height = 6)
+
+biomass_per_hectare_plot <- ggplot(small_and_large_river_length[!is.na(continent_display)],  
+       aes(x = continent_display, y = tons_C_per_ha, fill = continent_display)) +
+  geom_boxplot() +
+  season_facet + 
+  scale_fill_manual(values = c('#A66F8D','#395953','grey70', '#F2BC57','#D98841','#BF5349')) +
+  theme(legend.position = 'none',
+        axis.title.x = element_markdown()) +
+  labs(x = '',
+       y = 'Above- and below-ground biomass (tons/ha)',
+       fill = 'Landmass')
+
+ggsave(biomass_per_hectare_plot, filename = paste0(wd_figures, 'biomass_per_hectare_plot.pdf'),
+       width = 4, height = 6, useDingbats = F)
+ggsave(biomass_per_hectare_plot, filename = paste0(wd_figures, 'biomass_per_hectare_plot.png'),
+       width = 4, height = 6)
+# 
+# biomass_per_hectare_histogram <- ggplot(small_and_large_river_length[!is.na(continent_display)],  
+#        aes(y = tons_C_per_ha, fill = continent_display)) +
+#   geom_density() +
+#   season_facet + 
+#   facet_wrap(.~continent_display, nrow = 1) +
+#   scale_fill_manual(values = c('#A66F8D','#395953','grey70', '#F2BC57','#D98841','#BF5349')) +
+#   theme(legend.position = 'none',
+#         axis.title.x = element_markdown()) +
+#   labs(x = '',
+#        y = 'Above- and below-ground biomass (tons/ha)',
+#        fill = 'Landmass')
+# 
+# ggsave(biomass_per_hectare_plot, filename = paste0(wd_figures, 'biomass_per_hectare_plot.pdf'),
+#        width = 4, height = 6, useDingbats = F)
+# ggsave(biomass_per_hectare_plot, filename = paste0(wd_figures, 'biomass_per_hectare_plot.png'),
+#        width = 4, height = 6)
+
 #### 4. CREATE ANNOTATIONS FOR PLOTS OF SMALL VS LARGE RIVER LENGTH & AREA ####
 # Summarize length and area for small and large river groups
 small_and_large_river_length_summary <- small_and_large_river_length[
@@ -262,6 +328,8 @@ small_and_large_river_length_summary <- small_and_large_river_length[
      small_river_length_se = sd(small_river_length_km, na.rm = T)/sqrt(.N),
      mining_area_km2 = mean(area_km2, na.rm = T),
      mining_area_km2_se = sd(area_km2, na.rm = T)/sqrt(.N),
+     tons_C_per_ha = mean(tons_C_per_ha, na.rm = T),
+     tons_C_per_ha_se = sd(tons_C_per_ha, na.rm = T)/sqrt(.N),
      additional_small_river_fraction = mean(additional_small_river_fraction, na.rm = T),
      additional_small_river_fraction_se = sd(additional_small_river_fraction, na.rm = T)/sqrt(.N),
      N_rivers = .N
@@ -274,10 +342,23 @@ small_and_large_river_n_sites <- fread(paste0(wd_imports,'small_and_large_river_
 
 small_and_large_river_length_summary <- small_and_large_river_length_summary[small_and_large_river_n_sites, on = 'site_tstm'][
   ,':='(river_km_total = N_total_rivers * small_river_length_km,
-        river_km_se = N_total_rivers * small_river_length_km * small_river_length_se/small_river_length_km)
+        river_km_se = N_total_rivers * small_river_length_km * 
+                      small_river_length_se/small_river_length_km,
+        river_area_total_km2 = N_total_rivers * mining_area_km2,
+        river_area_km2_se = N_total_rivers * mining_area_km2 * 
+          mining_area_km2_se/mining_area_km2,
+        mining_area_biomass_Mt = 100 * tons_C_per_ha * N_total_rivers * mining_area_km2/1e6,
+        mining_area_biomass_Mt_se = 100 * tons_C_per_ha * N_total_rivers * mining_area_km2 * 
+          sqrt((mining_area_km2_se/mining_area_km2)^2 + (tons_C_per_ha_se/tons_C_per_ha)^2)/1e6
+        )
 ]
 
-total_additional_small_river_length <- small_and_large_river_length_summary[,.(additional_river_length = sum(river_km_total, na.rm = T))]
+fwrite(small_and_large_river_length_summary, file = paste0(wd_river_lengths, 'small_and_large_river_length_summary.csv'))
+total_additional_small_river_length <- small_and_large_river_length_summary[,.(
+  additional_river_length = sum(river_km_total, na.rm = T),
+  additional_river_length_se = sqrt(sum(river_km_se^2, na.rm = T)),
+  mining_area = sum(river_area_total_km2, na.rm = T),
+  mining_area_se = sqrt(sum(river_area_km2_se^2, na.rm = T)))]
 
 #### 5. COMBINE PLOTS WITH ANNOTATIONS ####
 ## Fig. S10
@@ -305,5 +386,116 @@ ggsave(combined_tstm_summary_annotated_plots, filename = paste0(wd_figures, 'fig
        width = 8, height = 8, useDingbats = F)
 ggsave(combined_tstm_summary_annotated_plots, filename = paste0(wd_figures, 'figS10_combined_tstm_summary_annotated_plots.png'),
        width = 8, height = 8)
+
+#### 6. PLOT MINING LENGTH AND AREA BY COUNTRY ####
+# Summarize length and area by country
+small_and_large_river_length_by_country <- small_and_large_river_length[
+  ,.(small_river_length_km = mean(small_river_length_km, na.rm = T),
+     small_river_length_se = sd(small_river_length_km, na.rm = T)/sqrt(.N),
+     mining_area_km2 = mean(area_km2, na.rm = T),
+     mining_area_km2_se = sd(area_km2, na.rm = T)/sqrt(.N),
+     additional_small_river_fraction = mean(additional_small_river_fraction, na.rm = T),
+     additional_small_river_fraction_se = sd(additional_small_river_fraction, na.rm = T)/sqrt(.N),
+     N_rivers = .N,
+     small_river_length_total_km = sum(small_river_length_km, na.rm = T),
+     mining_area_total_km2 = sum(area_km2, na.rm = T),
+     large_river_length_total_km = sum(km_Nx, na.rm = T)
+  ),
+  by = .(country_display, continent_display)
+]
+
+# Total mapped length and area
+small_and_large_river_total_mapped = small_and_large_river_length_by_country[,.(
+  small_river_length_km = sum(small_river_length_total_km, na.rm = T),
+  mining_area_km2 = sum(mining_area_total_km2, na.rm = T)
+)]
+# Rivers by country
+river_length_by_country <- melt(small_and_large_river_length_by_country, 
+                                id.vars = c('country_display','continent_display'),
+                                measure.vars = c('small_river_length_total_km','large_river_length_total_km'),
+                                value.name = c('river_length_total_km'))[
+                                  ,':='(site_type = ifelse(variable == 'large_river_length_total_km',
+                                                           'Headwater sites', 'Large river sites'))
+                                ]
+
+# Plot length by country
+county_river_length_summary_plot <- ggplot(river_length_by_country[!is.na(country_display)],
+                                           aes(x = country_display, y = river_length_total_km, fill = site_type)) + 
+  geom_col(color = 'black', linewidth = 0.25) +
+  # rotate() + 
+  scale_fill_manual(values = c('#2EB8F2', '#4007A6')) +
+  scale_y_continuous(expand = expansion(mult = c(0,0.1))) +
+  season_facet + 
+  # facet_wrap(.~continent_display, scales = 'free_y', ncol = 1) +
+  theme(legend.position = 'top') +
+  labs(y = 'River length (km)',
+       x = '',
+       fill = '') +
+  facet_grid(rows = vars(continent_display), scales = 'free_y', switch = "y", space = "free_y")  +
+  scale_x_discrete(limits=rev) +
+  theme(
+    plot.margin = margin(0.5, 0.5, 0.5, 0.5, unit = "cm"),
+    plot.title = element_text(face = "bold", hjust = 0),
+    strip.text.y = element_text(margin = margin(c(3,0,3,0)), angle = 270, face = "bold", hjust = 0.5),
+    strip.placement = "outside",
+    axis.title.y = element_blank(),
+    legend.position = "top",
+    panel.grid.major.y = element_blank()
+  )  +
+  coord_flip(clip = 'off')
+
+county_river_length_summary_plot <- ggplotGrob(county_river_length_summary_plot)
+
+# Remove clipping from left side strip label to allow for full display
+for(i in which(grepl("strip-l", county_river_length_summary_plot$layout$name))){
+  county_river_length_summary_plot$grobs[[i]]$layout$clip <- "off"
+}
+
+ggsave(county_river_length_summary_plot, filename = paste0(wd_figures, 'county_river_length_summary_plot.pdf'),
+       width = 6, height = 8, useDingbats = F)
+ggsave(county_river_length_summary_plot, filename = paste0(wd_figures, 'county_river_length_summary_plot.png'),
+       width = 6, height = 8)
+
+# Plot area by country
+county_mining_area_summary_plot <- ggplot(small_and_large_river_length_by_country[
+  !is.na(country_display) & mining_area_total_km2 > 0.1],
+                                           aes(x = country_display, y = mining_area_total_km2)) + 
+  geom_col(color = 'black', linewidth = 0.25, fill = 'grey40') +
+  # rotate() + 
+  scale_fill_manual(values = c('#2EB8F2', '#4007A6')) +
+  season_facet + 
+  # facet_wrap(.~continent_display, scales = 'free_y', ncol = 1) +
+  theme(legend.position = 'top') +
+  labs(y = 'Mapped mining area (km<sup>2</sup>)',
+       x = '',
+       fill = '') +
+  facet_grid(rows = vars(continent_display), scales = 'free_y', switch = "y", space = "free_y")  +
+  scale_x_discrete(limits=rev) +
+  scale_y_log10(labels = fancy_scientific_modified, expand = expansion(mult = c(0.0001,0.1))) +
+  theme(
+    plot.margin = margin(0.5, 0.5, 0.5, 0.5, unit = "cm"),
+    plot.title = element_text(face = "bold", hjust = 0),
+    strip.text.y = element_text(margin = margin(c(3,0,3,0)), angle = 270, face = "bold", hjust = 0.5),
+    panel.background = element_rect(fill = 'grey95'),
+    strip.placement = "outside",
+    axis.title.y = element_blank(),
+    legend.position = "top",
+    panel.grid.major.y = element_blank(),
+    axis.title.x = element_markdown()
+  )  +
+  coord_flip(clip = 'off')
+
+county_mining_area_summary_plot <- ggplotGrob(county_mining_area_summary_plot)
+
+# Remove clipping from left side strip label to allow for full display
+for(i in which(grepl("strip-l", county_mining_area_summary_plot$layout$name))){
+  county_mining_area_summary_plot$grobs[[i]]$layout$clip <- "off"
+}
+
+ggsave(county_mining_area_summary_plot, filename = paste0(wd_figures, 'county_mining_area_summary_plot.pdf'),
+       width = 6, height = 8, useDingbats = F)
+ggsave(county_mining_area_summary_plot, filename = paste0(wd_figures, 'county_mining_area_summary_plot.png'),
+       width = 6, height = 8)
+
 
 

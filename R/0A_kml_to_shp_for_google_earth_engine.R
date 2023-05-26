@@ -130,6 +130,10 @@ river_mining_polygons_import <- readOGR(paste0(wd_mining_mapping_import_folder,'
 writeOGR(river_mining_polygons_import, dsn = paste0(wd_mining_mapping_folder, '/ASGM_global_polygons_20230404'), 
          layer = 'ASGM_global_polygons_20230404', driver = 'ESRI Shapefile', overwrite_layer = T)
 
+river_mining_polygons_import_2 <- readOGR(paste0(wd_mining_mapping_import_folder,'ASGM_global_polygons_2_20230510.kml'))
+writeOGR(river_mining_polygons_import_2, dsn = paste0(wd_mining_mapping_folder, '/ASGM_global_polygons_2_20230510'), 
+         layer = 'ASGM_global_polygons_2_20230510', driver = 'ESRI Shapefile', overwrite_layer = T)
+
 #### 2. RIVER MINING SITES ####
 
 # All mining locations
